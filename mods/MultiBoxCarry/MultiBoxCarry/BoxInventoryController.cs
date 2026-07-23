@@ -682,6 +682,14 @@ internal static class BoxInventoryController
 				boxInteraction.m_PlacingMode = false;
 			}
 
+			// Vanilla routes held-box verbs (open/place/drop) through
+			// CurrentInteractable; without this the box is carried but inert.
+			IInteractable boxInteractable = ((Component)box).GetComponent<IInteractable>();
+			if (boxInteractable != null)
+			{
+				player.SetCurrentInteractable(boxInteractable);
+			}
+
 			NetworkBoxUtil.MarkHeld(queuableBox);
 			return BoxUtility.GetHeldQueueBox(holder) != null;
 		}

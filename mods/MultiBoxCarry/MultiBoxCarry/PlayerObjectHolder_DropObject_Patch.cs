@@ -100,12 +100,10 @@ internal static class PlayerObjectHolder_DropObject_Patch
 				}
 			}
 
-			BoxInventoryController.PruneDestroyedQueued(player);
-			BoxInventoryController.SanitizeHandVisuals(player);
-			if (!BoxUtility.IsInPlacingMode(player))
-			{
-				BoxInventoryController.EnsureHandOrPromotePublic(player);
-			}
+			// Do NOT promote or sanitize here: DropObject is called from inside
+			// vanilla BoxInteraction.DropBox, and mutating m_Box mid-drop makes the
+			// rest of the vanilla drop (network broadcast) target the newly promoted
+			// box. AutoRefill recovers and promotes on the next frame.
 		}
 		catch (Exception ex)
 		{
