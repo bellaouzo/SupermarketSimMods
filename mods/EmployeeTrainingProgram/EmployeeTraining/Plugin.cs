@@ -23,7 +23,7 @@ using UnityEngine.SceneManagement;
 
 namespace EmployeeTraining;
 
-[BepInPlugin("jp.tsuteto.sms.EmployeeTrainingProgram", "EmployeeTrainingProgram", "2.6.22")]
+[BepInPlugin("jp.tsuteto.sms.EmployeeTrainingProgram", "EmployeeTrainingProgram", "2.6.23")]
 [BepInProcess("Supermarket Simulator.exe")]
 public class Plugin : BasePlugin
 {
