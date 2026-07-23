@@ -41,59 +41,25 @@ public class BoxAdapter : IQueuableBox
 
 	public void HideAndAttach(Transform player, Vector3 offset)
 	{
-		BoxUtility.ClearMatchingHighlightBeforeQueue(_box);
+		//IL_0011: Unknown result type (might be due to invalid IL or missing references)
 		_box.SetOccupy(true, player);
 		BoxUtility.HideAndAttachShared(player, this, offset);
 	}
 
 	public bool IsOccupied()
 	{
-		PlayerInteraction local = CoopPlayer.GetLocalPlayerInteraction();
-		Transform localTransform = (Object)(object)local != (Object)null
-			? ((Component)local).transform
-			: null;
-
-		Transform occupyOwner = _box.OccupyOwner;
-		if ((Object)(object)occupyOwner != (Object)null)
+		if ((Object)(object)_box.OccupyOwner != (Object)null)
 		{
-			if ((Object)(object)localTransform == (Object)null
-				|| !IsSelfTransform(occupyOwner, localTransform))
-			{
-				return true;
-			}
+			return true;
 		}
 
-		try
-		{
-			NetworkBox networkBox = ((Component)_box).GetComponent<NetworkBox>()
-				?? ((Component)_box).GetComponentInParent<NetworkBox>();
-			if ((Object)(object)networkBox != (Object)null && networkBox.IsNetworkOccupied)
-			{
-				if ((Object)(object)local != (Object)null && BoxUtility.IsLocalInventoryBox(_box, local))
-				{
-					return false;
-				}
-
-				return true;
-			}
-		}
-		catch
-		{
-		}
-
-		return false;
-	}
-
-	private static bool IsSelfTransform(Transform owner, Transform localTransform)
-	{
-		return (Object)(object)owner == (Object)(object)localTransform
-			|| owner.IsChildOf(localTransform)
-			|| localTransform.IsChildOf(owner);
+		return NetworkBoxSync.IsNetworkOccupied(this);
 	}
 
 	public void Restore(Transform player)
 	{
 		_box.SetOccupy(false, player);
+		NetworkBoxSync.MarkReleased(this);
 		BoxUtility.RestoreShared(player, this);
 	}
 }

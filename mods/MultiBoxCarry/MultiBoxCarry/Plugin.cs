@@ -7,10 +7,11 @@ using UnityEngine;
 
 namespace MultiBoxCarry;
 
+[BepInDependency("NetworkUtil", BepInDependency.DependencyFlags.HardDependency)]
 [BepInPlugin("com.yaboie88.multiboxcarry", "Multi Box Carry", PluginVersion)]
 public class Plugin : BasePlugin
 {
-	internal const string PluginVersion = "1.1.33";
+	internal const string PluginVersion = "1.0.2";
 
 	internal new static ManualLogSource Log;
 
@@ -28,14 +29,14 @@ public class Plugin : BasePlugin
 
 		_initialized = true;
 		Log = ((BasePlugin)this).Log;
-		PluginConfig.Bind(Config);
 		Log.LogInfo((object)"Multi Box Carry loading...");
 		_harmony = new Harmony("com.yaboie88.multiboxcarry");
 		_harmony.PatchAll();
 		ClassInjector.RegisterTypeInIl2Cpp<BoxInventoryHUD>();
-		GameObject hudObject = new GameObject("MultiBoxCarry_HUD");
-		Object.DontDestroyOnLoad((Object)(object)hudObject);
-		hudObject.AddComponent<BoxInventoryHUD>();
-		Log.LogInfo((object)("Multi Box Carry " + PluginVersion + " loaded."));
+		GameObject val = new GameObject("MultiBoxCarry_HUD");
+		Object.DontDestroyOnLoad((Object)(object)val);
+		val.AddComponent<BoxInventoryHUD>();
+		CoopNetwork.EnsureSubscribed();
+		Log.LogInfo((object)("Multi Box Carry loaded. v" + PluginVersion + " (NetworkUtil co-op)"));
 	}
 }

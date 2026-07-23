@@ -52,7 +52,7 @@ internal sealed class FloorBoxAdapter : IQueuableBox
 
 	public bool IsOccupied()
 	{
-		return false;
+		return NetworkBoxSync.IsNetworkOccupied(this);
 	}
 
 	public void Restore(Transform playerTransform)

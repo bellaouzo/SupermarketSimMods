@@ -1,6 +1,5 @@
 using System;
 using HarmonyLib;
-using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 
 namespace MultiBoxCarry;
@@ -8,12 +7,17 @@ namespace MultiBoxCarry;
 [HarmonyPatch(typeof(PlayerObjectHolder), "DropObject")]
 internal static class PlayerObjectHolder_DropObject_Patch
 {
-	private static Box _droppingBox;
+	private static Box _pendingRelease;
 
 	[HarmonyPrefix]
 	private static void Prefix(PlayerObjectHolder __instance)
 	{
-		_droppingBox = null;
+		_pendingRelease = null;
+		if (BoxInventoryController.SuppressAutoRefill)
+		{
+			return;
+		}
+
 		try
 		{
 			if ((Object)(object)__instance == (Object)null || (Object)(object)__instance.CurrentObject == (Object)null)
@@ -21,27 +25,16 @@ internal static class PlayerObjectHolder_DropObject_Patch
 				return;
 			}
 
-			PlayerInteraction player = ((Component)__instance).GetComponent<PlayerInteraction>();
-			if (!CoopPlayer.IsLocal(player))
-			{
-				return;
-			}
-
-			GameObject current = ((Il2CppObjectBase)__instance.CurrentObject).TryCast<GameObject>();
+			GameObject current = __instance.CurrentObject.TryCast<GameObject>();
 			if ((Object)(object)current == (Object)null)
 			{
 				return;
 			}
 
-			_droppingBox = current.GetComponent<Box>();
-			if ((Object)(object)_droppingBox != (Object)null)
-			{
-				BoxUtility.EnableWorldCollisions(_droppingBox);
-			}
+			_pendingRelease = current.GetComponent<Box>();
 		}
-		catch (Exception ex)
+		catch
 		{
-			Plugin.Log.LogError((object)("[PlayerObjectHolder_DropObject_Patch.Prefix] " + ex));
 		}
 	}
 
@@ -50,38 +43,19 @@ internal static class PlayerObjectHolder_DropObject_Patch
 	{
 		try
 		{
-			if ((Object)(object)__instance == (Object)null || (Object)(object)_droppingBox == (Object)null)
+			if ((Object)(object)_pendingRelease != (Object)null)
 			{
-				_droppingBox = null;
-				return;
+				NetworkBoxSync.MarkReleased(new BoxAdapter(_pendingRelease));
+				_pendingRelease = null;
 			}
 
-			PlayerInteraction player = ((Component)__instance).GetComponent<PlayerInteraction>();
-			if (!CoopPlayer.IsLocal(player))
+			if (!((Object)(object)__instance == (Object)null))
 			{
-				_droppingBox = null;
-				return;
+				__instance.SetNullCurrentObject();
 			}
-
-			Box dropped = _droppingBox;
-			_droppingBox = null;
-
-			if (BoxUtility.IsOnHoldPoint(dropped, __instance))
-			{
-				BoxInventoryController.RestoreHeldAfterFailedDrop(player, dropped);
-				return;
-			}
-
-			NetworkBoxUtil.ClearOccupyFlags(new BoxAdapter(dropped));
-
-			// Do NOT null m_Box/CurrentObject or promote here: DropObject is called
-			// from inside vanilla BoxInteraction.DropBox, which still needs m_Box
-			// for its network broadcast and cleanup after this returns. Vanilla
-			// clears its own state; AutoRefill recovers and promotes next frame.
 		}
 		catch (Exception ex)
 		{
-			_droppingBox = null;
 			Plugin.Log.LogError((object)("[PlayerObjectHolder_DropObject_Patch] " + ex));
 		}
 	}

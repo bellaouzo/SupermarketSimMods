@@ -65,16 +65,16 @@
       <HintPath>$(GameInteropDir)\UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameInteropDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(GameInteropDir)\Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Unity.InputSystem">
       <HintPath>$(GameInteropDir)\Unity.InputSystem.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Unity.Localization">
-      <HintPath>$(GameInteropDir)\Unity.Localization.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="PhotonUnityNetworking">
@@ -87,6 +87,10 @@
     </Reference>
     <Reference Include="Photon3Unity3D">
       <HintPath>$(GameInteropDir)\Photon3Unity3D.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="NetworkUtil">
+      <HintPath>$(GamePluginsDir)\ApolloVulpez\NetworkUtil.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

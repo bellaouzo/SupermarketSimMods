@@ -14,7 +14,7 @@ internal static class Patch_FurniturePlacingMode_PlacingMode
 		{
 			if (!value && !((Object)(object)__instance == (Object)null))
 			{
-				PlayerObjectHolder val = CoopPlayer.GetLocalHolder();
+				PlayerObjectHolder val = Object.FindObjectOfType<PlayerObjectHolder>();
 				if (!((Object)(object)val == (Object)null) && !((Object)(object)val.CurrentObject == (Object)null))
 				{
 					val.SetNullCurrentObject();

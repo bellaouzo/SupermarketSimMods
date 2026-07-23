@@ -1,9 +1,10 @@
 using System;
+using System.Linq;
 using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using static UnityEngine.InputSystem.InputAction;
 using __Project__.Scripts.FloorPaintSystem;
 
 namespace MultiBoxCarry;
@@ -14,7 +15,7 @@ internal static class QueuePickUpPatch
 	private const float SWAP_RAY_DISTANCE = 2.5f;
 
 	[HarmonyPrefix]
-	private static bool Prefix(PlayerInteraction __instance, InputAction.CallbackContext context)
+	private static bool Prefix(PlayerInteraction __instance, CallbackContext context)
 	{
 		try
 		{
@@ -31,7 +32,7 @@ internal static class QueuePickUpPatch
 			{
 				return true;
 			}
-			if (!CoopPlayer.IsLocal(__instance))
+			if (!CoopPlayer.IsLocalInteraction(__instance) || !CoopNetwork.PeersMatch)
 			{
 				return true;
 			}
@@ -47,31 +48,21 @@ internal static class QueuePickUpPatch
 				Plugin.Log.LogWarning((object)"[MultiBox] Camera was null. Letting vanilla continue.");
 				return true;
 			}
-			IQueuableBox heldQueueBox = BoxUtility.GetHeldQueueBox(component);
+			IQueuableBox heldQueueBox = GetHeldQueueBox(component);
 			if (heldQueueBox == null)
 			{
 				return true;
 			}
-			if (BoxUtility.IsInPlacingMode(__instance))
+			if (IsInPlacingMode(__instance))
 			{
 				return true;
 			}
 			IQueuableBox queuableBox = FindTargetQueueBox(mainCamera, __instance, heldQueueBox);
 			if (queuableBox == null)
 			{
-				Plugin.Log.LogInfo((object)("[MultiBox][dbg] OnUse with held box but no queue target; vanilla runs (may drop). held="
-					+ BoxUtility.Describe(heldQueueBox)));
 				return true;
 			}
-			if (CoopPlayer.InMultiplayer
-				&& (!(heldQueueBox is BoxAdapter) || !(queuableBox is BoxAdapter)))
-			{
-				const string msg = "Furniture/floor boxes cannot be multi-carried in co-op";
-				Plugin.Log.LogWarning((object)msg);
-				ShowWarningMessage(msg);
-				return true;
-			}
-			BoxInventory inventory = PlayerInventoryManager.GetInventory(__instance);
+			BoxInventory inventory = PlayerInventoryManager.Inventory;
 			if (inventory == null)
 			{
 				return true;
@@ -92,69 +83,24 @@ internal static class QueuePickUpPatch
 
 	private static IQueuableBox FindTargetQueueBox(Camera cam, PlayerInteraction player, IQueuableBox heldBox)
 	{
-		IQueuableBox fromInteractable = GetQueueBoxFromInteractable(player.CurrentInteractable);
-		if (IsValidPickupTarget(fromInteractable, heldBox, player))
-		{
-			return fromInteractable;
-		}
-
-		RaycastHit playerHit = player.m_Hit;
-		Collider hitCollider = playerHit.collider;
-		if ((Object)(object)hitCollider != (Object)null)
-		{
-			IQueuableBox fromHit = GetQueueBoxFromCollider(hitCollider);
-			if (IsValidPickupTarget(fromHit, heldBox, player))
-			{
-				return fromHit;
-			}
-		}
-
 		Ray ray = new Ray(((Component)cam).transform.position, ((Component)cam).transform.forward);
-		Il2CppStructArray<RaycastHit> hits = Physics.RaycastAll(ray, SWAP_RAY_DISTANCE, -1, QueryTriggerInteraction.Collide);
+		RaycastHit[] hits = Physics.RaycastAll(ray, SWAP_RAY_DISTANCE, -1, QueryTriggerInteraction.Collide);
 		if (hits == null || hits.Length == 0)
 		{
 			return null;
 		}
 
-		int hitCount = hits.Length;
-		int[] order = new int[hitCount];
-		for (int i = 0; i < hitCount; i++)
+		foreach (RaycastHit hit in hits.OrderBy((RaycastHit h) => h.distance))
 		{
-			order[i] = i;
-		}
-
-		for (int i = 0; i < hitCount - 1; i++)
-		{
-			int best = i;
-			for (int j = i + 1; j < hitCount; j++)
-			{
-				if (hits[order[j]].distance < hits[order[best]].distance)
-				{
-					best = j;
-				}
-			}
-
-			if (best != i)
-			{
-				int temp = order[i];
-				order[i] = order[best];
-				order[best] = temp;
-			}
-		}
-
-		for (int i = 0; i < hitCount; i++)
-		{
-			RaycastHit hit = hits[order[i]];
-			Collider collider = hit.collider;
-			if ((Object)(object)collider == (Object)null)
+			if ((Object)(object)hit.collider == (Object)null)
 			{
 				continue;
 			}
 
-			Transform transform = ((Component)collider).transform;
+			Transform transform = ((Component)hit.collider).transform;
 			if ((Object)(object)transform == (Object)null
 				|| transform.IsChildOf(((Component)player).transform)
-				|| ((Component)collider).CompareTag("Player"))
+				|| ((Component)hit.collider).CompareTag("Player"))
 			{
 				continue;
 			}
@@ -165,8 +111,10 @@ internal static class QueuePickUpPatch
 				break;
 			}
 
-			IQueuableBox queueBoxFromCollider = GetQueueBoxFromCollider(collider);
-			if (IsValidPickupTarget(queueBoxFromCollider, heldBox, player))
+			IQueuableBox queueBoxFromCollider = GetQueueBoxFromCollider(hit.collider);
+			if (queueBoxFromCollider != null
+				&& !AreSameUnderlyingObject(queueBoxFromCollider, heldBox)
+				&& !IsQueueBoxOccupied(queueBoxFromCollider))
 			{
 				return queueBoxFromCollider;
 			}
@@ -175,59 +123,32 @@ internal static class QueuePickUpPatch
 		return null;
 	}
 
-	private static bool IsValidPickupTarget(IQueuableBox target, IQueuableBox heldBox, PlayerInteraction player)
+	private static IQueuableBox GetHeldQueueBox(PlayerObjectHolder holder)
 	{
-		if (target == null || AreSameUnderlyingObject(target, heldBox) || IsQueueBoxOccupied(target))
-		{
-			return false;
-		}
-
-		Transform transform = target.transform;
-		if ((Object)(object)transform == (Object)null)
-		{
-			return false;
-		}
-
-		if (transform.IsChildOf(((Component)player).transform))
-		{
-			return false;
-		}
-
-		return true;
-	}
-
-	private static IQueuableBox GetQueueBoxFromInteractable(IInteractable interactable)
-	{
-		if (interactable == null)
+		if ((Object)(object)holder == (Object)null || (Object)(object)holder.CurrentObject == (Object)null)
 		{
 			return null;
 		}
-
-		Il2CppObjectBase obj = ((Il2CppObjectBase)(object)interactable);
-		Box box = obj.TryCast<Box>();
-		if ((Object)(object)box != (Object)null)
+		GameObject val = ((Il2CppObjectBase)holder.CurrentObject).TryCast<GameObject>();
+		if ((Object)(object)val == (Object)null)
 		{
-			return new BoxAdapter(box);
+			return null;
 		}
-
-		FurnitureBox furnitureBox = obj.TryCast<FurnitureBox>();
-		if ((Object)(object)furnitureBox != (Object)null)
-		{
-			return new FurnitureBoxAdapter(furnitureBox);
-		}
-
-		FloorBox floorBox = obj.TryCast<FloorBox>();
-		if ((Object)(object)floorBox != (Object)null)
-		{
-			return new FloorBoxAdapter(floorBox);
-		}
-
-		Component component = obj.TryCast<Component>();
+		Box component = val.GetComponent<Box>();
 		if ((Object)(object)component != (Object)null)
 		{
-			return GetQueueBoxFromComponent(component);
+			return new BoxAdapter(component);
 		}
-
+		FurnitureBox component2 = val.GetComponent<FurnitureBox>();
+		if ((Object)(object)component2 != (Object)null)
+		{
+			return new FurnitureBoxAdapter(component2);
+		}
+		FloorBox component3 = val.GetComponent<FloorBox>();
+		if ((Object)(object)component3 != (Object)null)
+		{
+			return new FloorBoxAdapter(component3);
+		}
 		return null;
 	}
 
@@ -237,51 +158,21 @@ internal static class QueuePickUpPatch
 		{
 			return null;
 		}
-
-		return GetQueueBoxFromComponent((Component)collider);
-	}
-
-	private static IQueuableBox GetQueueBoxFromComponent(Component component)
-	{
-		if ((Object)(object)component == (Object)null)
+		Box componentInParent = ((Component)collider).GetComponentInParent<Box>();
+		if ((Object)(object)componentInParent != (Object)null)
 		{
-			return null;
+			return new BoxAdapter(componentInParent);
 		}
-
-		Box box = component.GetComponentInParent<Box>();
-		if ((Object)(object)box != (Object)null)
+		FurnitureBox componentInParent2 = ((Component)collider).GetComponentInParent<FurnitureBox>();
+		if ((Object)(object)componentInParent2 != (Object)null)
 		{
-			return new BoxAdapter(box);
+			return new FurnitureBoxAdapter(componentInParent2);
 		}
-
-		FurnitureBox furnitureBox = component.GetComponentInParent<FurnitureBox>();
-		if ((Object)(object)furnitureBox != (Object)null)
+		FloorBox componentInParent3 = ((Component)collider).GetComponentInParent<FloorBox>();
+		if ((Object)(object)componentInParent3 != (Object)null)
 		{
-			return new FurnitureBoxAdapter(furnitureBox);
+			return new FloorBoxAdapter(componentInParent3);
 		}
-
-		FloorBox floorBox = component.GetComponentInParent<FloorBox>();
-		if ((Object)(object)floorBox != (Object)null)
-		{
-			return new FloorBoxAdapter(floorBox);
-		}
-
-		BoxInteraction boxInteraction = component.GetComponentInParent<BoxInteraction>();
-		if ((Object)(object)boxInteraction != (Object)null && (Object)(object)boxInteraction.m_Box != (Object)null)
-		{
-			return new BoxAdapter(boxInteraction.m_Box);
-		}
-
-		FurnitureBoxInteraction furnitureInteraction = component.GetComponentInParent<FurnitureBoxInteraction>();
-		if ((Object)(object)furnitureInteraction != (Object)null)
-		{
-			FurnitureBox furnitureFromInteraction = furnitureInteraction.CurrentFurnitureBox;
-			if ((Object)(object)furnitureFromInteraction != (Object)null)
-			{
-				return new FurnitureBoxAdapter(furnitureFromInteraction);
-			}
-		}
-
 		return null;
 	}
 
@@ -291,12 +182,46 @@ internal static class QueuePickUpPatch
 		{
 			return false;
 		}
-		return BoxUtility.SameBox(a.Raw, b.Raw);
+		return a.Raw == b.Raw;
 	}
 
 	private static bool IsQueueBoxOccupied(IQueuableBox queueBox)
 	{
-		return queueBox?.IsOccupied() ?? false;
+		if (queueBox == null)
+		{
+			return false;
+		}
+
+		if (queueBox.IsOccupied())
+		{
+			return true;
+		}
+
+		return NetworkBoxSync.IsNetworkOccupied(queueBox);
+	}
+
+	private static bool IsInPlacingMode(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return false;
+		}
+		BoxInteraction component = ((Component)player).GetComponent<BoxInteraction>();
+		if ((Object)(object)component != (Object)null && component.m_PlacingMode)
+		{
+			return true;
+		}
+		FurnitureBoxInteraction component2 = ((Component)player).GetComponent<FurnitureBoxInteraction>();
+		if ((Object)(object)component2 != (Object)null && component2.m_PlacingMode)
+		{
+			return true;
+		}
+		FurniturePlacingMode val = Object.FindObjectOfType<FurniturePlacingMode>();
+		if ((Object)(object)val != (Object)null && val.IsPlacingMode)
+		{
+			return true;
+		}
+		return false;
 	}
 
 	public static void ShowWarningMessage(string message, float duration = 2f)

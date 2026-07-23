@@ -29,7 +29,7 @@ internal class BoxInventory
 		}
 		foreach (IQueuableBox queuedBox in _queuedBoxes)
 		{
-			if (queuedBox != null && BoxUtility.SameBox(queuedBox.Raw, boxToQueue.Raw))
+			if (queuedBox != null && queuedBox.Raw == boxToQueue.Raw)
 			{
 				return false;
 			}
@@ -86,73 +86,6 @@ internal class BoxInventory
 			return null;
 		}
 		return _queuedBoxes[_queuedBoxes.Count - 1];
-	}
-
-	public IQueuableBox TakeAt(int index)
-	{
-		if (index < 0 || index >= _queuedBoxes.Count)
-		{
-			return null;
-		}
-
-		IQueuableBox result = _queuedBoxes[index];
-		_queuedBoxes.RemoveAt(index);
-		return result;
-	}
-
-	public bool InsertAt(int index, IQueuableBox box)
-	{
-		if (box == null || IsFull)
-		{
-			return false;
-		}
-
-		if (index < 0)
-		{
-			index = 0;
-		}
-
-		if (index > _queuedBoxes.Count)
-		{
-			index = _queuedBoxes.Count;
-		}
-
-		foreach (IQueuableBox queuedBox in _queuedBoxes)
-		{
-			if (queuedBox != null && BoxUtility.SameBox(queuedBox.Raw, box.Raw))
-			{
-				return false;
-			}
-		}
-
-		_queuedBoxes.Insert(index, box);
-		return true;
-	}
-
-	public bool RemoveByRaw(object raw)
-	{
-		if (raw == null)
-		{
-			return false;
-		}
-
-		bool removed = false;
-		for (int i = _queuedBoxes.Count - 1; i >= 0; i--)
-		{
-			IQueuableBox queuedBox = _queuedBoxes[i];
-			if (queuedBox != null && BoxUtility.SameBox(queuedBox.Raw, raw))
-			{
-				_queuedBoxes.RemoveAt(i);
-				removed = true;
-			}
-		}
-
-		return removed;
-	}
-
-	public bool AddRaw(IQueuableBox box)
-	{
-		return InsertAt(_queuedBoxes.Count, box);
 	}
 
 	public bool Remove(IQueuableBox box)

@@ -43,7 +43,7 @@ internal class FurnitureBoxAdapter : IQueuableBox
 
 	public bool IsOccupied()
 	{
-		return false;
+		return NetworkBoxSync.IsNetworkOccupied(this);
 	}
 
 	public void Restore(Transform playerTransform)

@@ -12,26 +12,18 @@ internal static class PlayerObjectHolder_ThrowObjectToBin_Patch
 	{
 		try
 		{
-			if ((Object)(object)__instance == (Object)null)
+			if (!((Object)(object)__instance == (Object)null))
 			{
-				return;
+				if (OnThrowMessanger.OpenBoxBlockDepth > 0)
+				{
+					Plugin.Log.LogInfo((object)"[MultiBox] Suppressed hand clear during box open.");
+					OnThrowMessanger.GaveMessage("box");
+				}
+				else
+				{
+					__instance.SetNullCurrentObject();
+				}
 			}
-
-			PlayerInteraction player = ((Component)__instance).GetComponent<PlayerInteraction>();
-			if (!CoopPlayer.IsLocal(player))
-			{
-				return;
-			}
-
-			if (OnThrowMessanger.OpenBoxBlockDepth > 0)
-			{
-				Plugin.Log.LogInfo((object)"[MultiBox] Suppressed hand clear during box open.");
-				OnThrowMessanger.GaveMessage("box");
-				return;
-			}
-
-			__instance.SetNullCurrentObject();
-			BoxInventoryController.PruneDestroyedQueued(player);
 		}
 		catch (Exception ex)
 		{

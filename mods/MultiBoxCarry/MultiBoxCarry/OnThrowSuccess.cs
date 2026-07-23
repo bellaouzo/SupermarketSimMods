@@ -13,39 +13,12 @@ internal static class OnThrowSuccess
 	{
 		try
 		{
-			if (!OnThrowMessanger.hasThrowMessage
-				|| (Object)(object)__instance == (Object)null
-				|| (Object)(object)interaction == (Object)null
-				|| !(interaction is BoxInteraction || interaction is FurnitureBoxInteraction || interaction is FloorBoxInteraction))
+			if (OnThrowMessanger.hasThrowMessage && !((Object)(object)__instance == (Object)null) && !((Object)(object)interaction == (Object)null) && (interaction is BoxInteraction || interaction is FurnitureBoxInteraction || interaction is FloorBoxInteraction))
 			{
-				return;
-			}
-
-			if (!CoopPlayer.IsLocal(__instance))
-			{
-				return;
-			}
-
-			PlayerObjectHolder component = ((Component)__instance).GetComponent<PlayerObjectHolder>();
-			if ((Object)(object)component != (Object)null)
-			{
+				PlayerObjectHolder component = ((Component)__instance).GetComponent<PlayerObjectHolder>();
 				component.SetNullCurrentObject();
+				OnThrowMessanger.GaveMessage("throw");
 			}
-
-			BoxInteraction boxInteraction = ((Component)__instance).GetComponent<BoxInteraction>();
-			if ((Object)(object)boxInteraction != (Object)null)
-			{
-				boxInteraction.m_Box = null;
-				boxInteraction.m_PlacingMode = false;
-			}
-
-			BoxInventoryController.PruneDestroyedQueued(__instance);
-			if (!BoxUtility.IsInPlacingMode(__instance))
-			{
-				BoxInventoryController.EnsureHandOrPromotePublic(__instance);
-			}
-
-			OnThrowMessanger.GaveMessage("throw");
 		}
 		catch (Exception ex)
 		{

@@ -12,21 +12,13 @@ internal static class FurnitureBoxInteraction_SellFurnitureOrder_Patch
 	{
 		try
 		{
-			if ((Object)(object)__instance == (Object)null)
+			if (!((Object)(object)__instance == (Object)null))
 			{
-				return;
-			}
-
-			PlayerInteraction player = ((Component)__instance).GetComponent<PlayerInteraction>();
-			if (!CoopPlayer.IsLocal(player))
-			{
-				return;
-			}
-
-			PlayerObjectHolder component = ((Component)__instance).GetComponent<PlayerObjectHolder>();
-			if ((Object)(object)component != (Object)null)
-			{
-				component.SetNullCurrentObject();
+				PlayerObjectHolder component = ((Component)__instance).GetComponent<PlayerObjectHolder>();
+				if (!((Object)(object)component == (Object)null))
+				{
+					component.SetNullCurrentObject();
+				}
 			}
 		}
 		catch (Exception ex)
