@@ -151,26 +151,26 @@ public abstract class EmployeeAppTab<I, S> where I : EmployeeTrainingProgressIte
 			Vector2? pivot = new Vector2(0.5f, 1f);
 			string labelKey = detailParam.LabelKey;
 			Color labelColor = new Color(1f, 1f, 1f, 0.78f);
-			val3.SetupText(pos, size, 7.5f, (HorizontalAlignmentOptions)2, labelColor, pivot, labelKey);
+			val3.SetupText(pos, size, 7f, (HorizontalAlignmentOptions)2, labelColor, pivot, labelKey);
 			if (detailParam.ValueKey != null)
 			{
 				GameObject val4 = Il2CppHelpers.NewGameObject("Value", typeof(TextMeshProUGUI), typeof(StringLocalizeTranslator));
 				val4.transform.SetParent(val2.transform);
-				Vector3 pos2 = new Vector3(0f, -9f, 0f);
-				Vector2 size2 = new Vector2(80f, 15f);
+				Vector3 pos2 = new Vector3(0f, -8f, 0f);
+				Vector2 size2 = new Vector2(80f, 14f);
 				pivot = new Vector2(0.5f, 1f);
 				labelKey = detailParam.ValueKey;
 				string[] valueArgs = detailParam.ValueArgs;
-				val4.SetupText(pos2, size2, 12.5f, (HorizontalAlignmentOptions)2, null, pivot, labelKey, valueArgs);
+				val4.SetupText(pos2, size2, 12f, (HorizontalAlignmentOptions)2, null, pivot, labelKey, valueArgs);
 			}
 			else
 			{
 				GameObject val5 = Il2CppHelpers.NewGameObject("Value", typeof(TextMeshProUGUI));
 				val5.transform.SetParent(val2.transform);
-				Vector3 pos3 = new Vector3(0f, -9f, 0f);
-				Vector2 size3 = new Vector2(80f, 15f);
+				Vector3 pos3 = new Vector3(0f, -8f, 0f);
+				Vector2 size3 = new Vector2(80f, 14f);
 				pivot = new Vector2(0.5f, 1f);
-				val5.SetupText(pos3, size3, 12.5f, (HorizontalAlignmentOptions)2, null, pivot);
+				val5.SetupText(pos3, size3, 12f, (HorizontalAlignmentOptions)2, null, pivot);
 			}
 		}
 	}
@@ -191,6 +191,7 @@ public abstract class EmployeeAppTab<I, S> where I : EmployeeTrainingProgressIte
 		Transform val = TabObj.transform.Find("Scroll View");
 		Image component2 = ((Component)val).GetComponent<Image>();
 		((Graphic)component2).color = bgColor;
+		UIHelper.PinStatusList(listObj);
 		ListObj = listObj;
 	}
 

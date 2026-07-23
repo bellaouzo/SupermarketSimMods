@@ -71,6 +71,47 @@ internal static class UIHelper
 		obj.transform.localPosition = pos;
 	}
 
+	public static RectTransform PinTopLeft(GameObject obj, Transform parent, Vector2 anchoredPos, Vector2 size)
+	{
+		obj.transform.SetParent(parent, false);
+		RectTransform rt = obj.GetComponent<RectTransform>();
+		if ((Object)(object)rt == (Object)null)
+		{
+			rt = obj.AddComponent<RectTransform>();
+		}
+
+		rt.localScale = Vector3.one;
+		rt.localRotation = Quaternion.identity;
+		rt.anchorMin = new Vector2(0f, 1f);
+		rt.anchorMax = new Vector2(0f, 1f);
+		rt.pivot = new Vector2(0f, 1f);
+		rt.sizeDelta = size;
+		rt.anchoredPosition = anchoredPos;
+		return rt;
+	}
+
+	public static void PinStatusList(Transform status)
+	{
+		if ((Object)(object)status == (Object)null)
+		{
+			return;
+		}
+
+		GridLayoutGroup grid = status.GetComponent<GridLayoutGroup>();
+		if ((Object)(object)grid != (Object)null)
+		{
+			grid.cellSize = new Vector2(320f, 145f);
+			grid.constraint = GridLayoutGroup.Constraint.Flexible;
+			grid.spacing = new Vector2(10f, 10f);
+			grid.padding = new RectOffset(0, 0, 0, 0);
+			grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+			grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+			grid.childAlignment = TextAnchor.UpperLeft;
+		}
+
+		status.localPosition = new Vector3(0f, 95f, 0f);
+	}
+
 	public static void SetupText(this GameObject obj, Vector3 pos, Vector2 size, float fontsize, HorizontalAlignmentOptions align = HorizontalAlignmentOptions.Left, Color? color = null, Vector2? pivot = null, string key = null, string[] args = null)
 	{
 		obj.SetupObject(pos, size, pivot);

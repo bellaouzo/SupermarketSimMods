@@ -44,7 +44,7 @@ public static class ClerkRecoveryPatch
 		{
 			return;
 		}
-		_nextGlobalCleanup = Time.unscaledTime + 15f;
+		_nextGlobalCleanup = Time.unscaledTime + 45f;
 		RunRecoveryPass();
 	}
 

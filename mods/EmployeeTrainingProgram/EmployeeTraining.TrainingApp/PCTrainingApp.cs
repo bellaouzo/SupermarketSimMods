@@ -302,12 +302,7 @@ public class PCTrainingApp : MonoBehaviour
 		component2.TabName = "cashiers";
 		Transform val3 = gameObject2.transform.Find("Scroll View/Viewport/Content");
 		((Object)val3).name = "Status";
-		GridLayoutGroup component3 = ((Component)val3).GetComponent<GridLayoutGroup>();
-		component3.cellSize = new Vector2(320f, 150f);
-		component3.constraint = (GridLayoutGroup.Constraint)0;
-		component3.spacing = new Vector2(12f, 12f);
-		component3.padding = new RectOffset(8, 8, 8, 8);
-		val3.localPosition = new Vector3(0f, 95f);
+		UIHelper.PinStatusList(val3);
 		Transform val4 = gameObject2.transform.Find("Scroll View");
 		Image component4 = ((Component)val4).GetComponent<Image>();
 		((Graphic)component4).color = new Color(0.86f, 0.92f, 0.96f, 1f);
@@ -591,8 +586,8 @@ public class PCTrainingApp : MonoBehaviour
 		Plugin.LogDebug("Preparing info part of base panel");
 		GameObject gameObject = ((Component)panelObj.transform.Find("Elements/Info")).gameObject;
 		RectTransform component11 = gameObject.GetComponent<RectTransform>();
-		component11.SetSizeWithCurrentAnchors((RectTransform.Axis)0, 310f);
-		component11.SetSizeWithCurrentAnchors((RectTransform.Axis)1, 115f);
+		component11.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 310f);
+		component11.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 115f);
 		component11.anchoredPosition = new Vector2(0f, 0f);
 		component11.pivot = new Vector2(0f, 1f);
 		gameObject.transform.localPosition = new Vector3(-75f, 52.5f, 0f);
@@ -634,42 +629,29 @@ public class PCTrainingApp : MonoBehaviour
 		val15.transform.SetParent(gameObject.transform);
 		val15.SetupObject(new Vector3(15f, -32f, 0f), (Vector2?)new Vector2(-15f, 25f), (Vector2?)null);
 		Plugin.LogDebug("- Preparing roadmap");
-		GameObject val16 = new GameObject("Roadmap Title");
+		GameObject val16 = Il2CppHelpers.NewGameObject("Roadmap Title", typeof(RectTransform));
 		val16.transform.SetParent(gameObject.transform);
-		val16.SetupObject(new Vector3(15f, -60f, 0f));
+		val16.SetupObject(new Vector3(15f, -70f, 0f));
 		GameObject val17 = Il2CppHelpers.NewGameObject("Divider", typeof(RawImage));
 		val17.transform.SetParent(val16.transform);
-		val17.SetupObject(new Vector3(0f, 0f, 0f), new Vector2(280f, 1.5f), new Vector2(0f, 1f));
+		val17.SetupObject(new Vector3(0f, 0f, 0f), (Vector2?)new Vector2(280f, 1f), (Vector2?)null);
 		RawImage component13 = val17.GetComponent<RawImage>();
 		component13.texture = (Texture)(object)Utils.FindResourceByName<Texture2D>("UnityWhite");
 		((Graphic)component13).color = UIHelper.Divider;
-		RectTransform dividerRt = val17.GetComponent<RectTransform>();
-		dividerRt.anchorMin = new Vector2(0f, 1f);
-		dividerRt.anchorMax = new Vector2(0f, 1f);
-		dividerRt.pivot = new Vector2(0f, 1f);
-		dividerRt.anchoredPosition = new Vector2(0f, 0f);
 		GameObject val18 = Il2CppHelpers.NewGameObject("Text", typeof(TextMeshProUGUI), typeof(StringLocalizeTranslator));
 		val18.transform.SetParent(val16.transform);
-		val18.SetupText(new Vector3(0f, -3f, 0f), new Vector2(200f, 10f), 8f, (HorizontalAlignmentOptions)1, new Color(1f, 1f, 1f, 0.9f), new Vector2(0f, 1f), "Mastery Roadmap");
-		RectTransform titleRt = val18.GetComponent<RectTransform>();
-		titleRt.anchorMin = new Vector2(0f, 1f);
-		titleRt.anchorMax = new Vector2(0f, 1f);
-		titleRt.pivot = new Vector2(0f, 1f);
-		titleRt.anchoredPosition = new Vector2(0f, -3f);
-		TextMeshProUGUI roadmapTitle = val18.GetComponent<TextMeshProUGUI>();
-		((TMP_Text)roadmapTitle).characterSpacing = 0.4f;
-		((TMP_Text)roadmapTitle).enableAutoSizing = false;
+		val18.SetupText(new Vector3(0f, -3f, 0f), new Vector2(200f, 10f), 6f, (HorizontalAlignmentOptions)1, null, null, "Mastery Roadmap");
 		GameObject val19 = Il2CppHelpers.NewGameObject("Roadmap", typeof(GridLayoutGroup));
 		val19.transform.SetParent(gameObject.transform);
-		val19.SetupObject(new Vector3(15f, -74f, 0f), (Vector2?)new Vector2(-15f, 32f), (Vector2?)null);
+		val19.SetupObject(new Vector3(15f, -65f, 0f), (Vector2?)new Vector2(-15f, 35f), (Vector2?)null);
 		float num = 54f;
 		GridLayoutGroup component14 = val19.GetComponent<GridLayoutGroup>();
-		component14.cellSize = new Vector2(num, 32f);
+		component14.cellSize = new Vector2(num, 35f);
 		component14.constraint = (GridLayoutGroup.Constraint)1;
 		component14.constraintCount = 5;
 		component14.spacing = new Vector2(2f, 0f);
 		Vector2 val20 = default(Vector2);
-		val20 = new Vector2(num, 11f);
+		val20 = new Vector2(num, 12f);
 		Grade[] list = Grade.List;
 		foreach (Grade grade in list)
 		{
@@ -678,13 +660,17 @@ public class PCTrainingApp : MonoBehaviour
 			val21.SetupObject(new Vector3(0f, 0f, 0f));
 			GameObject val22 = Il2CppHelpers.NewGameObject("Label", typeof(TextMeshProUGUI), typeof(StringLocalizeTranslator));
 			val22.transform.SetParent(val21.transform);
-			UIHelper.SetupText(pos: new Vector3(0f, 0f, 0f), size: new Vector2(num - 5f, 11f), pivot: (Vector2?)new Vector2(0.5f, 1f), obj: val22, fontsize: 8.5f, align: (HorizontalAlignmentOptions)2, color: (Color?)(Color32)(grade.Color), key: grade.Name, args: (string[])null);
-			RectTransform gradeLabelRt = val22.GetComponent<RectTransform>();
-			gradeLabelRt.anchorMin = new Vector2(0.5f, 1f);
-			gradeLabelRt.anchorMax = new Vector2(0.5f, 1f);
-			gradeLabelRt.pivot = new Vector2(0.5f, 1f);
-			gradeLabelRt.anchoredPosition = new Vector2(0f, 0f);
-			GameObject val23 = ComposeSlider(val21, "Slider", new Vector3(0f, -12f, 0f), val20, (Color32)(grade.Color));
+			UIHelper.SetupText(
+				pos: new Vector3(0f, 0f, 0f),
+				size: new Vector2(num - 5f, 12f),
+				pivot: (Vector2?)new Vector2(0.5f, 1f),
+				obj: val22,
+				fontsize: 8f,
+				align: (HorizontalAlignmentOptions)2,
+				color: (Color?)(Color32)(grade.Color),
+				key: grade.Name,
+				args: null);
+			GameObject val23 = ComposeSlider(val21, "Slider", new Vector3(0f, -13f, 0f), val20, (Color32)(grade.Color));
 			GameObject val24 = Il2CppHelpers.NewGameObject("Checkmark", typeof(Image), typeof(Outline));
 			val24.transform.SetParent(val23.transform);
 			val24.SetupObject(new Vector3(0f, 0f, 0f), (Vector2?)new Vector2(12f, 12f), (Vector2?)new Vector2(0.5f, 1f));
@@ -694,9 +680,9 @@ public class PCTrainingApp : MonoBehaviour
 			((Shadow)component16).effectColor = (Color32)(new Color32(byte.MaxValue, byte.MaxValue, byte.MaxValue, byte.MaxValue));
 			((Shadow)component16).effectDistance = new Vector2(0.2f, 0.2f);
 			val24.SetActive(false);
-			GameObject val25 = new GameObject("Seal");
+			GameObject val25 = Il2CppHelpers.NewGameObject("Seal", typeof(RectTransform));
 			val25.transform.SetParent(val21.transform);
-			val25.SetupObject(new Vector3(0f, -12f, 0f));
+			val25.SetupObject(new Vector3(0f, -13f, 0f));
 			val25.SetActive(false);
 			GameObject val26 = Il2CppHelpers.NewGameObject("Fill", typeof(RectTransform), typeof(Image));
 			val26.transform.SetParent(val25.transform);
@@ -707,7 +693,15 @@ public class PCTrainingApp : MonoBehaviour
 			((Graphic)component18).color = (Color32)(new Color32((byte)34, (byte)74, (byte)96, byte.MaxValue));
 			GameObject val27 = Il2CppHelpers.NewGameObject("Text", typeof(TextMeshProUGUI), typeof(StringLocalizeTranslator));
 			val27.transform.SetParent(val25.transform);
-			val27.SetupText(new Vector3(0f, 0f, 0f), val20, 8f, (HorizontalAlignmentOptions)2, (Color?)(Color32)(new Color32(byte.MaxValue, byte.MaxValue, byte.MaxValue, (byte)140)), (Vector2?)new Vector2(0.5f, 1f), "Locked", (string[])null);
+			val27.SetupText(
+				new Vector3(0f, 0f, 0f),
+				val20,
+				8f,
+				(HorizontalAlignmentOptions)2,
+				(Color?)(Color32)(new Color32(byte.MaxValue, byte.MaxValue, byte.MaxValue, (byte)32)),
+				(Vector2?)new Vector2(0.5f, 1f),
+				"Locked",
+				null);
 		}
 	}
 

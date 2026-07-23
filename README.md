@@ -4,6 +4,8 @@ Modified BepInEx plugins for **[Supermarket Simulator](https://store.steampowere
 
 Most of these started as existing community mods. This repo is a maintained fork/port set with multiplayer fixes, sync, and small UX improvements so hosts and guests stay on the same page.
 
+**ConnectionGuard** is the exception: it’s an original mod written for this repo (not a fork), aimed at unstable co-op connections.
+
 ## What’s included
 
 | Mod | Based on / role | What this fork improves |
@@ -14,8 +16,21 @@ Most of these started as existing community mods. This repo is a maintained fork
 | **ShelfProductSwapper** | CS Shelf Product Swapper | Frame-guarded input, Photon sync so partners see swaps |
 | **SmartStockOrder** | CS Smart Stock Order | Co-op-safe cart adds (`TryAddProduct_Request`), CustomHints |
 | **FurnitureAligner** | CS Furniture Aligner | Placement snap/align; Outside bypass disabled in multiplayer rooms |
+| **ConnectionGuard** | **Original (this repo)** | Ping HUD + longer Photon/game disconnect timeouts for spike-prone co-op |
 
 Optional soft dependency: **[SirW_CustomHints](https://github.com/)** (on-screen key hints). Upstream plugin GUIDs are kept where possible so existing `.cfg` files still apply.
+
+## ConnectionGuard (original)
+
+Written here for friends who spike hard and get kicked almost immediately. It does **not** fix a dead connection — it just makes Photon / the game more patient through short spikes.
+
+- Top-right **PING** readout while in a multiplayer room (color shifts green → yellow → red)
+- Raises Photon peer disconnect timeout (default **45s**, vanilla is often ~10s)
+- Raises Photon background keep-alive and reliable-message resend allowance so brief packet loss is less likely to drop the session
+
+Install `ConnectionGuard.dll` on **every** co-op PC. Timeouts are applied per client. After first launch, tweak `BepInEx/config/ConnectionGuard.cfg` (e.g. bump `PhotonDisconnectTimeoutMs` to `60000` if someone still drops on bad spikes).
+
+More detail: [`mods/ConnectionGuard/README.md`](mods/ConnectionGuard/README.md).
 
 ## Requirements
 
@@ -35,6 +50,7 @@ Typical outputs after a Release build:
 - `CS-FurnitureAligner.dll`
 - `CS-ShelfProductSwapper.dll`
 - `CS-SmartStockOrder.dll`
+- `ConnectionGuard.dll`
 - (+ DemandSystem / MultiBoxCarry project outputs)
 
 ## Build
@@ -67,6 +83,7 @@ These forks aim to make multiplayer less desynced than stock single-player-orien
 - **Host owns** training XP / Train actions; guests receive synced skill data.
 - Shelf swaps and smart-order cart adds go through networked game APIs where possible.
 - Carry queues and input hotkeys are scoped so one player’s actions don’t steal another’s.
+- **ConnectionGuard** on all PCs if anyone has unstable internet; compare ping HUD while stress-testing.
 - Use matching versions of every DLL on all machines.
 
 Quick smoke check (2 clients):
@@ -77,10 +94,12 @@ Quick smoke check (2 clients):
 4. Training levels match after join / host train  
 5. Smart order fills a cart the partner can see  
 6. Furniture align still snaps; Outside doesn’t force-valid in MP  
+7. ConnectionGuard ping HUD shows while in-room; short spikes don’t instant-kick  
 
 ## Credits
 
 - Original authors of Employee Training Program (Tsuteto), CS Furniture Aligner, CS Shelf Product Swapper, CS Smart Stock Order, MultiBoxCarry, Demand, and related community work
+- **ConnectionGuard** — original mod in this repo
 - Nokta Games — Supermarket Simulator
 - BepInEx / Il2CppInterop tooling
 

@@ -32,6 +32,9 @@ SupermarketSimMod/
     SmartStockOrder/             ← CS Smart Stock Order fork + CustomHints (already had frame guard)
       SmartStockOrder.csproj
       bin/CS-SmartStockOrder.dll
+    ConnectionGuard/             ← ping HUD + longer Photon/game disconnect timeouts
+      ConnectionGuard.csproj
+      bin/ConnectionGuard.dll
   reference/                     ← decompiles, original DLL, ilspy scratch (not shipped)
 ```
 
@@ -44,6 +47,7 @@ SupermarketSimMod/
 - **MultiBoxCarry**: per-local inventory + `NetworkPlayer` guards + `NetworkBox` occupy on queue.
 - **DemandSystem**: day-seeded events + shopping-list-seeded customer extras (matching cfg on all PCs).
 - **EmployeeTraining**: host publishes skill JSON via Photon room prop `etp_v1`; guests apply; host-only Train/XP.
+- **ConnectionGuard**: top-right ping HUD; raises Photon `DisconnectTimeout` / resends + game `NetworkManager.DisconnectTimeout`. Install on all co-op PCs.
 
 #### Co-op smoke checklist (2 clients, same DLLs/cfg)
 
