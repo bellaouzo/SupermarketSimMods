@@ -41,7 +41,7 @@ public class BoxAdapter : IQueuableBox
 
 	public void HideAndAttach(Transform player, Vector3 offset)
 	{
-		//IL_0011: Unknown result type (might be due to invalid IL or missing references)
+		BoxUtility.ClearMatchingHighlightBeforeQueue(_box);
 		_box.SetOccupy(true, player);
 		BoxUtility.HideAndAttachShared(player, this, offset);
 	}
@@ -52,6 +52,20 @@ public class BoxAdapter : IQueuableBox
 		{
 			return true;
 		}
+
+		try
+		{
+			NetworkBox networkBox = ((Component)_box).GetComponent<NetworkBox>()
+				?? ((Component)_box).GetComponentInParent<NetworkBox>();
+			if ((Object)(object)networkBox != (Object)null && networkBox.IsNetworkOccupied)
+			{
+				return true;
+			}
+		}
+		catch
+		{
+		}
+
 		return false;
 	}
 

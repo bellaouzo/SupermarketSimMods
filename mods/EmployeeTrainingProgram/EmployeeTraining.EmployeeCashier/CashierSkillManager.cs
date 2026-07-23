@@ -33,6 +33,7 @@ public class CashierSkillManager : EmployeeSkillManager<CashierSkill, CashierSki
 			return;
 		}
 		DeduplicateTrainingData();
+		RegisterMissingTrainingPanels();
 		Il2CppSystem.Collections.Generic.List<int> hired = employeeManager.CashiersData;
 		if (hired != null)
 		{
@@ -52,17 +53,34 @@ public class CashierSkillManager : EmployeeSkillManager<CashierSkill, CashierSki
 			}
 		}
 		Il2CppList active = employeeManager.ActiveCashiers ?? employeeManager.m_ActiveCashiers;
-		if (active == null)
+		int activeCount = 0;
+		if (active != null)
+		{
+			foreach (Cashier cashier in active)
+			{
+				if (cashier != null)
+				{
+					Spawn(active, cashier.CashierID);
+					activeCount++;
+				}
+			}
+		}
+		Plugin.LogInfo($"Cashier sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+	}
+
+	private void RegisterMissingTrainingPanels()
+	{
+		if (PCTrainingApp.Instance == null)
 		{
 			return;
 		}
-		foreach (Cashier cashier in active)
+
+		foreach (CashierSkillData data in TrainingData)
 		{
-			if (cashier != null)
+			if (data?.Skill != null && (Object)(object)data.Skill.TrainingStatusPanelObj == (Object)null)
 			{
-				Spawn(active, cashier.CashierID);
+				PCTrainingApp.Instance.RegisterEmployee(data.Skill);
 			}
 		}
-		Plugin.LogInfo($"Cashier sync complete. hired={hired?.Count ?? 0}, active={active.Count}, training={TrainingData.Count}");
 	}
 }

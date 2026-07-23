@@ -34,17 +34,21 @@ internal static class NetworkCartUtil
 			NetworkMarketShoppingCart network = ((Component)cart).GetComponent<NetworkMarketShoppingCart>()
 				?? ((Component)cart).GetComponentInParent<NetworkMarketShoppingCart>()
 				?? Object.FindObjectOfType<NetworkMarketShoppingCart>();
-			if ((Object)(object)network != (Object)null)
+			if ((Object)(object)network == (Object)null)
 			{
-				try
-				{
-					network.TryAddProduct_Request(item, salesType);
-					return true;
-				}
-				catch (Exception ex)
-				{
-					SmartStockOrderPlugin.LogSource.LogWarning((object)("Network cart add failed, falling back local: " + ex.Message));
-				}
+				SmartStockOrderPlugin.LogSource.LogWarning((object)"Network cart missing; refusing local TryAddProduct in multiplayer.");
+				return false;
+			}
+
+			try
+			{
+				network.TryAddProduct_Request(item, salesType);
+				return true;
+			}
+			catch (Exception ex)
+			{
+				SmartStockOrderPlugin.LogSource.LogWarning((object)("Network cart add failed; refusing local fallback: " + ex.Message));
+				return false;
 			}
 		}
 

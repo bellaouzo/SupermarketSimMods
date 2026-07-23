@@ -80,8 +80,8 @@ internal static class CoopPlayer
 			}
 		}
 
-		_cachedLocal = players[0];
-		return _cachedLocal;
+		_cachedLocal = null;
+		return null;
 	}
 
 	internal static PlayerInstance GetLocalPlayerInstance()

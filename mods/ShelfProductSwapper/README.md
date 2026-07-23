@@ -1,6 +1,6 @@
 # CS - Shelf Product Swapper (fork)
 
-Fork of CS Shelf Product Swapper for Supermarket Simulator v1.4.2 with **SirW_CustomHints** integration and a co-op hotkey fix.
+Fork of CS Shelf Product Swapper for Supermarket Simulator v1.4.2 with **SirW_CustomHints** integration, co-op hotkey fix, and Photon RaiseEvent sync for shelf/rack swaps (no double native resync).
 
 While the swapper is enabled (**F6**), left-panel hints show for:
 

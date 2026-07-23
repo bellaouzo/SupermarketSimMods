@@ -82,6 +82,16 @@ public class RestockerSkillManager : EmployeeSkillManager<RestockerSkill, Restoc
 			return;
 		}
 		DeduplicateTrainingData();
+		if (PCTrainingApp.Instance != null)
+		{
+			foreach (RestockerSkillData data in TrainingData)
+			{
+				if (data?.Skill != null && (Object)(object)data.Skill.TrainingStatusPanelObj == (Object)null)
+				{
+					PCTrainingApp.Instance.RegisterEmployee(data.Skill);
+				}
+			}
+		}
 		Il2CppSystem.Collections.Generic.List<int> hired = employeeManager.m_RestockersData;
 		if (hired != null)
 		{

@@ -12,7 +12,7 @@ public sealed class DemandPlugin : BasePlugin
 {
 	public const string PluginGuid = "DemandSystem";
 	public const string PluginName = "Demand System";
-	public const string PluginVersion = "1.1.1";
+	public const string PluginVersion = "1.1.2";
 
 	internal static ConfigEntry<bool> Enabled;
 	internal static ConfigEntry<float> EventChancePercent;
@@ -47,6 +47,6 @@ public sealed class DemandPlugin : BasePlugin
 		DemandOverlay.Create();
 		_harmony = new Harmony(PluginGuid);
 		_harmony.PatchAll(typeof(DemandPlugin).Assembly);
-		base.Log.LogInfo($"{PluginName} {PluginVersion} loaded (co-op synced day seed).");
+		base.Log.LogInfo($"{PluginName} {PluginVersion} loaded (host-synced demand + cfg handshake).");
 	}
 }

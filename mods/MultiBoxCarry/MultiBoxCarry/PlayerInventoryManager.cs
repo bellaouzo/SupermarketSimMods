@@ -33,11 +33,48 @@ internal static class PlayerInventoryManager
 			return;
 		}
 
-		Inventories.Remove(((Object)player).GetInstanceID());
+		int id = ((Object)player).GetInstanceID();
+		if (Inventories.TryGetValue(id, out BoxInventory inventory) && inventory != null)
+		{
+			for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
+			{
+				NetworkBoxUtil.MarkReleased(inventory.QueuedBoxes[i]);
+			}
+
+			inventory.Clear();
+		}
+
+		Inventories.Remove(id);
+	}
+
+	public static void ClearAll()
+	{
+		FlushAll();
+	}
+
+	public static void FlushAll()
+	{
+		foreach (KeyValuePair<int, BoxInventory> pair in Inventories)
+		{
+			BoxInventory inventory = pair.Value;
+			if (inventory == null)
+			{
+				continue;
+			}
+
+			for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
+			{
+				NetworkBoxUtil.MarkReleased(inventory.QueuedBoxes[i]);
+			}
+
+			inventory.Clear();
+		}
+
+		Inventories.Clear();
 	}
 
 	public static void Reset()
 	{
-		Inventories.Clear();
+		FlushAll();
 	}
 }

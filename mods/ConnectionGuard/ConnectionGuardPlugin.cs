@@ -12,7 +12,7 @@ public sealed class ConnectionGuardPlugin : BasePlugin
 {
 	public const string PluginGuid = "ConnectionGuard";
 	public const string PluginName = "Connection Guard";
-	public const string PluginVersion = "1.0.4";
+	public const string PluginVersion = "1.0.5";
 
 	internal static ManualLogSource LogSource;
 

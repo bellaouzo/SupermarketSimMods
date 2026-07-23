@@ -14,12 +14,16 @@ internal static class AutoRefillPatch
 	{
 		try
 		{
-			if (BoxInventoryController.SuppressAutoRefill || (Object)(object)__instance == (Object)null)
+			if ((Object)(object)__instance == (Object)null || !CoopPlayer.IsLocal(__instance))
 			{
 				return;
 			}
 
-			if (!CoopPlayer.IsLocal(__instance))
+			CoopHandshake.Tick();
+
+			HandHighlightGuard.Tick(__instance);
+
+			if (BoxInventoryController.SuppressAutoRefill)
 			{
 				return;
 			}

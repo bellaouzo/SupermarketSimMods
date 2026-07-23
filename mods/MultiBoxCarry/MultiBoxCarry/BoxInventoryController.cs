@@ -8,10 +8,10 @@ internal static class BoxInventoryController
 {
 	internal static bool SuppressAutoRefill;
 
+	private static float _promoteBackoffUntil;
+
 	public static bool TryQueueBox(PlayerInteraction player, IQueuableBox heldBox, IQueuableBox targetBox)
 	{
-		//IL_0120: Unknown result type (might be due to invalid IL or missing references)
-		//IL_00de: Unknown result type (might be due to invalid IL or missing references)
 		if ((Object)(object)player == (Object)null || heldBox == null || targetBox == null)
 		{
 			return false;
@@ -19,6 +19,25 @@ internal static class BoxInventoryController
 		if (!CoopPlayer.IsLocal(player))
 		{
 			return false;
+		}
+
+		if (CoopPlayer.InMultiplayer)
+		{
+			if (!CoopHandshake.PeersMatch)
+			{
+				const string mismatch = "MultiBoxCarry version mismatch with host — multi-carry blocked.";
+				Plugin.Log.LogWarning((object)mismatch);
+				QueuePickUpPatch.ShowWarningMessage(mismatch);
+				return false;
+			}
+
+			if (!IsProductBox(heldBox) || !IsProductBox(targetBox))
+			{
+				const string msg = "Furniture/floor boxes cannot be multi-carried in co-op";
+				Plugin.Log.LogWarning((object)msg);
+				QueuePickUpPatch.ShowWarningMessage(msg);
+				return false;
+			}
 		}
 
 		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
@@ -29,38 +48,52 @@ internal static class BoxInventoryController
 		}
 		int count = inventory.Count;
 		RackSlot rackSlot = GetRackSlot(targetBox);
-		if ((Object)(object)rackSlot != (Object)null)
+		SuppressAutoRefill = true;
+		try
 		{
-			bool flag = IsSameProduct(heldBox, targetBox);
-			bool flag2 = Keyboard.current != null && ((ButtonControl)Keyboard.current.leftShiftKey).isPressed;
-			if (flag && !flag2)
+			if ((Object)(object)rackSlot != (Object)null)
 			{
-				return false;
+				bool flag = IsSameProduct(heldBox, targetBox);
+				bool flag2 = Keyboard.current != null && ((ButtonControl)Keyboard.current.leftShiftKey).isPressed;
+				if (flag && !flag2)
+				{
+					return false;
+				}
+				SoftUnhandLocal(player);
+				if (!inventory.Enqueue(heldBox, targetBox.GetProduct()))
+				{
+					TryRestoreHand(player, heldBox);
+					return false;
+				}
+				BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(count));
+				NetworkBoxUtil.MarkQueued(heldBox);
+				rackSlot.InstantInteract();
+				EnsureHandOrPromote(player);
+				return true;
 			}
-			heldBox.Drop(player);
+
+			SoftUnhandLocal(player);
 			if (!inventory.Enqueue(heldBox, targetBox.GetProduct()))
 			{
+				TryRestoreHand(player, heldBox);
 				return false;
 			}
 			BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(count));
 			NetworkBoxUtil.MarkQueued(heldBox);
-			rackSlot.InstantInteract();
+			IInteractable component = ((Component)targetBox.transform).GetComponent<IInteractable>();
+			if (component != null)
+			{
+				player.SetCurrentInteractable(component);
+				player.Interact(false, false);
+			}
+
+			EnsureHandOrPromote(player);
 			return true;
 		}
-		heldBox.Drop(player);
-		if (!inventory.Enqueue(heldBox, targetBox.GetProduct()))
+		finally
 		{
-			return false;
+			SuppressAutoRefill = false;
 		}
-		BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(count));
-		NetworkBoxUtil.MarkQueued(heldBox);
-		IInteractable component = ((Component)targetBox.transform).GetComponent<IInteractable>();
-		if (component != null)
-		{
-			player.SetCurrentInteractable(component);
-			player.Interact(false, false);
-		}
-		return true;
 	}
 
 	public static bool TryPromoteNextBox(PlayerInteraction player)
@@ -69,6 +102,12 @@ internal static class BoxInventoryController
 		{
 			return true;
 		}
+
+		if (Time.unscaledTime < _promoteBackoffUntil)
+		{
+			return true;
+		}
+
 		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
 		if (inventory == null || inventory.IsEmpty)
 		{
@@ -79,7 +118,20 @@ internal static class BoxInventoryController
 		{
 			return true;
 		}
-		return !PromoteBox(player, queuableBox);
+
+		if (BoxUtility.IsDestroyed(queuableBox))
+		{
+			NetworkBoxUtil.MarkReleased(queuableBox);
+			return true;
+		}
+
+		if (!PromoteBox(player, queuableBox))
+		{
+			_promoteBackoffUntil = Time.unscaledTime + 0.2f;
+			return true;
+		}
+
+		return false;
 	}
 
 	public static bool TryCycleBoxes(PlayerInteraction player, int direction)
@@ -119,7 +171,7 @@ internal static class BoxInventoryController
 					return false;
 				}
 
-				heldBox.Drop(player);
+				SoftUnhandLocal(player);
 				inventory.AddRaw(heldBox);
 			}
 			else
@@ -130,12 +182,18 @@ internal static class BoxInventoryController
 					return false;
 				}
 
-				heldBox.Drop(player);
+				SoftUnhandLocal(player);
 				inventory.InsertAt(0, heldBox);
 			}
 
 			BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(0));
-			return PromoteBox(player, targetBox);
+			NetworkBoxUtil.MarkQueued(heldBox);
+			if (!PromoteBox(player, targetBox))
+			{
+				EnsureHandOrPromote(player);
+			}
+
+			return true;
 		}
 		finally
 		{
@@ -177,19 +235,87 @@ internal static class BoxInventoryController
 				return false;
 			}
 
-			heldBox.Drop(player);
+			SoftUnhandLocal(player);
 			if (!inventory.InsertAt(queueIndex, heldBox))
 			{
 				inventory.AddRaw(heldBox);
 			}
 
 			BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(queueIndex));
-			return PromoteBox(player, targetBox);
+			NetworkBoxUtil.MarkQueued(heldBox);
+			if (!PromoteBox(player, targetBox))
+			{
+				EnsureHandOrPromote(player);
+			}
+
+			return true;
 		}
 		finally
 		{
 			SuppressAutoRefill = false;
 		}
+	}
+
+	internal static void PruneDestroyedQueued(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
+		if (inventory == null || inventory.IsEmpty)
+		{
+			return;
+		}
+
+		for (int i = inventory.QueuedBoxes.Count - 1; i >= 0; i--)
+		{
+			IQueuableBox queued = inventory.QueuedBoxes[i];
+			if (queued == null || BoxUtility.IsDestroyed(queued))
+			{
+				NetworkBoxUtil.MarkReleased(queued);
+				inventory.TakeAt(i);
+			}
+		}
+	}
+
+	private static void SoftUnhandLocal(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		BoxInteraction boxInteraction = ((Component)player).GetComponent<BoxInteraction>();
+		if ((Object)(object)boxInteraction != (Object)null)
+		{
+			boxInteraction.m_Box = null;
+		}
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		if ((Object)(object)holder != (Object)null)
+		{
+			holder.SetNullCurrentObject();
+		}
+	}
+
+	private static void EnsureHandOrPromote(PlayerInteraction player)
+	{
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		if ((Object)(object)holder != (Object)null && (Object)(object)holder.CurrentObject != (Object)null)
+		{
+			return;
+		}
+
+		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
+		if (inventory == null || inventory.IsEmpty)
+		{
+			return;
+		}
+
+		_promoteBackoffUntil = 0f;
+		TryPromoteNextBox(player);
 	}
 
 	private static bool PromoteBox(PlayerInteraction player, IQueuableBox queuableBox)
@@ -199,25 +325,160 @@ internal static class BoxInventoryController
 			return false;
 		}
 
-		NetworkBoxUtil.MarkReleased(queuableBox);
+		if (BoxUtility.IsDestroyed(queuableBox))
+		{
+			NetworkBoxUtil.MarkReleased(queuableBox);
+			return false;
+		}
+
+		NetworkBoxUtil.PrepareForHandPickup(queuableBox);
 		BoxUtility.RestoreBox(queuableBox, ((Component)player).transform);
 		IInteractable interactable = GetInteractable(queuableBox);
-		if (interactable == null)
+		if (interactable == null || BoxUtility.IsDestroyed(queuableBox))
 		{
-			ReflowQueuedBoxes(player);
+			if (BoxUtility.IsDestroyed(queuableBox))
+			{
+				NetworkBoxUtil.MarkReleased(queuableBox);
+				return false;
+			}
+
+			RequeueHidden(player, queuableBox);
 			return false;
 		}
 
 		player.SetCurrentInteractable(interactable);
 		player.Interact(false, false);
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		IQueuableBox handAfter = BoxUtility.GetHeldQueueBox(holder);
+		if (handAfter == null || handAfter.Raw != queuableBox.Raw)
+		{
+			if (BoxUtility.IsDestroyed(queuableBox))
+			{
+				NetworkBoxUtil.MarkReleased(queuableBox);
+				return false;
+			}
+
+			if (!TryForceHand(player, queuableBox))
+			{
+				RequeueHidden(player, queuableBox);
+				return false;
+			}
+		}
+
+		if (queuableBox is BoxAdapter promotedAdapter)
+		{
+			Box promoted = promotedAdapter.GetBox();
+			BoxInteraction boxInteraction = ((Component)player).GetComponent<BoxInteraction>();
+			if ((Object)(object)boxInteraction != (Object)null && (Object)(object)promoted != (Object)null)
+			{
+				boxInteraction.m_Box = promoted;
+				if (promoted.m_ActiveHighlightMode == Box.HighlightMode.None)
+				{
+					promoted.m_ActiveHighlightMode = Box.HighlightMode.Display;
+				}
+
+				promoted.UpdateMatchingDisplaySlotsHighlight();
+			}
+		}
+
+		BoxUtility.SetBoxPhysicsHeld(queuableBox);
+		NetworkBoxUtil.MarkHeld(queuableBox);
 		ReflowQueuedBoxes(player);
 		return true;
 	}
 
+	private static bool TryForceHand(PlayerInteraction player, IQueuableBox queuableBox)
+	{
+		if (queuableBox is not BoxAdapter adapter)
+		{
+			return false;
+		}
+
+		Box box = adapter.GetBox();
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		BoxInteraction boxInteraction = ((Component)player).GetComponent<BoxInteraction>();
+		if ((Object)(object)box == (Object)null || (Object)(object)holder == (Object)null)
+		{
+			return false;
+		}
+
+		try
+		{
+			Transform holdPoint = (Object)(object)holder.m_ObjectHolder != (Object)null
+				? holder.m_ObjectHolder
+				: ((Component)player).transform;
+			BoxUtility.SetBoxPhysicsHeld(queuableBox);
+			queuableBox.transform.SetParent(holdPoint, false);
+			queuableBox.transform.localPosition = Vector3.zero;
+			queuableBox.transform.localRotation = Quaternion.identity;
+			box.SetOccupy(true, ((Component)player).transform);
+			holder.CurrentObject = ((Component)box).gameObject;
+			if ((Object)(object)boxInteraction != (Object)null)
+			{
+				boxInteraction.m_Box = box;
+			}
+
+			NetworkBoxUtil.MarkHeld(queuableBox);
+			return BoxUtility.GetHeldQueueBox(holder) != null;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	private static void RequeueHidden(PlayerInteraction player, IQueuableBox queuableBox)
+	{
+		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
+		if (inventory != null)
+		{
+			bool alreadyQueued = false;
+			for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
+			{
+				if (inventory.QueuedBoxes[i] != null && inventory.QueuedBoxes[i].Raw == queuableBox.Raw)
+				{
+					alreadyQueued = true;
+					break;
+				}
+			}
+
+			if (!alreadyQueued && !inventory.IsFull)
+			{
+				inventory.InsertAt(0, queuableBox);
+			}
+		}
+
+		BoxUtility.HideAndAttachBox(((Component)player).transform, queuableBox, BoxUtility.GetQueueLocalOffset(0));
+		NetworkBoxUtil.MarkQueued(queuableBox);
+		ReflowQueuedBoxes(player);
+	}
+
+	private static void TryRestoreHand(PlayerInteraction player, IQueuableBox heldBox)
+	{
+		if ((Object)(object)player == (Object)null || heldBox == null || BoxUtility.IsDestroyed(heldBox))
+		{
+			return;
+		}
+
+		NetworkBoxUtil.PrepareForHandPickup(heldBox);
+		BoxUtility.RestoreBox(heldBox, ((Component)player).transform);
+		IInteractable interactable = GetInteractable(heldBox);
+		if (interactable == null)
+		{
+			return;
+		}
+
+		player.SetCurrentInteractable(interactable);
+		player.Interact(false, false);
+		if (BoxUtility.GetHeldQueueBox(((Component)player).GetComponent<PlayerObjectHolder>()) == null)
+		{
+			TryForceHand(player, heldBox);
+		}
+	}
+
 	public static void ReflowQueuedBoxes(PlayerInteraction player)
 	{
-		//IL_0065: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0077: Unknown result type (might be due to invalid IL or missing references)
 		if ((Object)(object)player == (Object)null)
 		{
 			return;
@@ -230,7 +491,7 @@ internal static class BoxInventoryController
 		for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
 		{
 			IQueuableBox queuableBox = inventory.QueuedBoxes[i];
-			if (queuableBox != null)
+			if (queuableBox != null && !BoxUtility.IsDestroyed(queuableBox))
 			{
 				queuableBox.transform.SetParent(((Component)player).transform, false);
 				queuableBox.transform.localPosition = BoxUtility.GetQueueLocalOffset(i);
@@ -239,9 +500,14 @@ internal static class BoxInventoryController
 		}
 	}
 
+	private static bool IsProductBox(IQueuableBox queueBox)
+	{
+		return queueBox is BoxAdapter;
+	}
+
 	private static IInteractable GetInteractable(IQueuableBox queuedBox)
 	{
-		if (queuedBox == null || queuedBox.Raw == null)
+		if (queuedBox == null || queuedBox.Raw == null || BoxUtility.IsDestroyed(queuedBox))
 		{
 			return null;
 		}
@@ -256,7 +522,7 @@ internal static class BoxInventoryController
 
 	private static RackSlot GetRackSlot(IQueuableBox queueBox)
 	{
-		if (queueBox == null)
+		if (queueBox == null || BoxUtility.IsDestroyed(queueBox))
 		{
 			return null;
 		}

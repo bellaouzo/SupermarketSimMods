@@ -102,6 +102,29 @@ internal static class BoxUtility
 		queueBox?.Restore(playerTransform);
 	}
 
+	internal static bool IsDestroyed(IQueuableBox queueBox)
+	{
+		if (queueBox == null)
+		{
+			return true;
+		}
+
+		try
+		{
+			if (queueBox.Raw is Object unityRaw && (Object)(object)unityRaw == (Object)null)
+			{
+				return true;
+			}
+
+			Transform transform = queueBox.transform;
+			return (Object)(object)transform == (Object)null;
+		}
+		catch
+		{
+			return true;
+		}
+	}
+
 	internal static void RestoreShared(Transform playerTransform, IQueuableBox queueBox)
 	{
 		queueBox.transform.SetParent((Transform)null, true);
@@ -142,8 +165,6 @@ internal static class BoxUtility
 
 	public static void SetBoxPhysicsQueued(IQueuableBox queueBox)
 	{
-		//IL_0025: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0031: Unknown result type (might be due to invalid IL or missing references)
 		if (queueBox != null)
 		{
 			Rigidbody component = ((Component)queueBox.transform).GetComponent<Rigidbody>();
@@ -158,10 +179,29 @@ internal static class BoxUtility
 		}
 	}
 
+	public static void SetBoxPhysicsHeld(IQueuableBox queueBox)
+	{
+		if (queueBox == null || IsDestroyed(queueBox))
+		{
+			return;
+		}
+
+		SetBoxVisible(queueBox, visible: true);
+		SetBoxColliders(queueBox, enabled: true);
+		Rigidbody component = ((Component)queueBox.transform).GetComponent<Rigidbody>();
+		if ((Object)(object)component == (Object)null)
+		{
+			return;
+		}
+
+		component.linearVelocity = Vector3.zero;
+		component.angularVelocity = Vector3.zero;
+		component.isKinematic = true;
+		component.detectCollisions = true;
+	}
+
 	public static void SetBoxPhysicsWorld(IQueuableBox queueBox)
 	{
-		//IL_0025: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0031: Unknown result type (might be due to invalid IL or missing references)
 		if (queueBox != null)
 		{
 			Rigidbody component = ((Component)queueBox.transform).GetComponent<Rigidbody>();
@@ -175,11 +215,164 @@ internal static class BoxUtility
 		}
 	}
 
+	internal static void EnableWorldCollisions(IQueuableBox queueBox)
+	{
+		if (queueBox == null || IsDestroyed(queueBox))
+		{
+			return;
+		}
+
+		try
+		{
+			SetBoxVisible(queueBox, visible: true);
+			SetBoxColliders(queueBox, enabled: true);
+			Rigidbody body = ((Component)queueBox.transform).GetComponent<Rigidbody>();
+			if ((Object)(object)body != (Object)null)
+			{
+				body.detectCollisions = true;
+			}
+		}
+		catch
+		{
+		}
+	}
+
+	internal static void EnableWorldCollisions(Box box)
+	{
+		if ((Object)(object)box == (Object)null)
+		{
+			return;
+		}
+
+		EnableWorldCollisions(new BoxAdapter(box));
+	}
+
+	internal static void PrepareBoxForWorld(IQueuableBox queueBox)
+	{
+		if (queueBox == null || IsDestroyed(queueBox))
+		{
+			return;
+		}
+
+		try
+		{
+			Transform transform = queueBox.transform;
+			if ((Object)(object)transform != (Object)null && (Object)(object)transform.parent != (Object)null)
+			{
+				transform.SetParent((Transform)null, true);
+			}
+
+			SetBoxVisible(queueBox, visible: true);
+			SetBoxColliders(queueBox, enabled: true);
+			SetBoxPhysicsWorld(queueBox);
+		}
+		catch
+		{
+		}
+	}
+
+	internal static void PrepareBoxForWorld(Box box)
+	{
+		if ((Object)(object)box == (Object)null)
+		{
+			return;
+		}
+
+		PrepareBoxForWorld(new BoxAdapter(box));
+	}
+
 	public static Vector3 GetQueueLocalOffset(int index)
 	{
-		//IL_0010: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0015: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0018: Unknown result type (might be due to invalid IL or missing references)
-		return new Vector3(0f, 0.45f, 0.2f);
+		return new Vector3(0f, -3f, -2f);
+	}
+
+	internal static void ClearMatchingHighlight(Box box)
+	{
+		ClearMatchingHighlightCore(box, restoreOccupy: true);
+	}
+
+	internal static void ClearMatchingHighlightBeforeQueue(Box box)
+	{
+		ClearMatchingHighlightCore(box, restoreOccupy: false);
+	}
+
+	private static void ClearMatchingHighlightCore(Box box, bool restoreOccupy)
+	{
+		if ((Object)(object)box == (Object)null)
+		{
+			return;
+		}
+
+		HandHighlightGuard.HighlightBypassDepth++;
+		try
+		{
+			Transform occupyOwner = box.OccupyOwner;
+			if ((Object)(object)occupyOwner != (Object)null)
+			{
+				box.SetOccupy(false, occupyOwner);
+			}
+
+			box.m_ActiveHighlightMode = Box.HighlightMode.Display;
+			box.UpdateMatchingDisplaySlotsHighlight();
+
+			if (restoreOccupy && (Object)(object)occupyOwner != (Object)null)
+			{
+				box.SetOccupy(true, occupyOwner);
+			}
+		}
+		catch
+		{
+		}
+		finally
+		{
+			HandHighlightGuard.HighlightBypassDepth--;
+		}
+	}
+
+	internal static bool IsQueuedProductBox(Box box)
+	{
+		if ((Object)(object)box == (Object)null)
+		{
+			return false;
+		}
+
+		PlayerInteraction player = CoopPlayer.GetLocalPlayerInteraction();
+		if ((Object)(object)player == (Object)null)
+		{
+			return false;
+		}
+
+		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
+		if (inventory == null || inventory.IsEmpty)
+		{
+			return false;
+		}
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		Box handBox = null;
+		if ((Object)(object)holder != (Object)null && (Object)(object)holder.CurrentObject != (Object)null)
+		{
+			GameObject current = ((Il2CppObjectBase)holder.CurrentObject).TryCast<GameObject>();
+			if ((Object)(object)current != (Object)null)
+			{
+				handBox = current.GetComponent<Box>();
+			}
+		}
+
+		if ((Object)(object)handBox != (Object)null && (Object)(object)handBox == (Object)(object)box)
+		{
+			return false;
+		}
+
+		for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
+		{
+			if (inventory.QueuedBoxes[i] is BoxAdapter adapter
+				&& (Object)(object)adapter.GetBox() == (Object)(object)box)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

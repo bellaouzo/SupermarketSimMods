@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using Il2CppListInt = Il2CppSystem.Collections.Generic.List<int>;
 using Il2CppDictIntInt = Il2CppSystem.Collections.Generic.Dictionary<int, int>;
@@ -13,6 +14,7 @@ internal static class DemandState
 	private static System.Random _dayRng = new System.Random(1);
 	private static float _overlayUntil;
 	private static int _lastGeneratedDay = int.MinValue;
+	private static bool _dayCommitted;
 
 	internal static IReadOnlyList<int> DemandedProducts => DemandedProductIds;
 
@@ -43,26 +45,40 @@ internal static class DemandState
 
 	internal static void GenerateForDay(int currentDay)
 	{
-		if (!DemandPlugin.Enabled.Value || currentDay < 0 || _lastGeneratedDay == currentDay)
+		if (!DemandPlugin.Enabled.Value || currentDay < 0)
+		{
+			return;
+		}
+
+		if (!DemandNetworkSync.ShouldGenerateLocally)
+		{
+			return;
+		}
+
+		if (_dayCommitted && _lastGeneratedDay == currentDay)
 		{
 			return;
 		}
 
 		_lastGeneratedDay = currentDay;
-		DemandedProductIds.Clear();
 		_dayRng = new System.Random(HashDaySeed(currentDay));
+		DemandedProductIds.Clear();
 
 		float roll = RollDayPercent();
 		if (roll > Mathf.Clamp(DemandPlugin.EventChancePercent.Value, 0f, 100f))
 		{
+			_dayCommitted = true;
+			_overlayUntil = 0f;
 			LogDebug($"No demand event today. day={currentDay} roll={roll:0.##}");
+			DemandNetworkSync.NotifyHostGenerated();
 			return;
 		}
 
 		List<int> pool = GetActiveCustomerProducts();
 		if (pool.Count == 0)
 		{
-			LogDebug("Demand event rolled, but no active customer products were available.");
+			_dayCommitted = false;
+			LogDebug("Demand event rolled, but no active customer products were available; will retry.");
 			return;
 		}
 
@@ -76,13 +92,88 @@ internal static class DemandState
 		}
 
 		DemandedProductIds.Sort();
+		_dayCommitted = true;
 		_overlayUntil = Time.realtimeSinceStartup + Mathf.Max(1f, DemandPlugin.OverlayDurationSeconds.Value);
 		LogDebug("Demand event active (day " + currentDay + "): " + string.Join(", ", DemandedProductIds));
+		DemandNetworkSync.NotifyHostGenerated();
+	}
+
+	internal static string BuildNetworkState()
+	{
+		StringBuilder sb = new StringBuilder();
+		sb.Append(_lastGeneratedDay == int.MinValue ? -1 : _lastGeneratedDay);
+		sb.Append('|');
+		sb.Append(_dayCommitted ? '1' : '0');
+		sb.Append('|');
+		for (int i = 0; i < DemandedProductIds.Count; i++)
+		{
+			if (i > 0)
+			{
+				sb.Append(',');
+			}
+
+			sb.Append(DemandedProductIds[i]);
+		}
+
+		return sb.ToString();
+	}
+
+	internal static bool ApplyNetworkState(string state)
+	{
+		if (string.IsNullOrEmpty(state))
+		{
+			return false;
+		}
+
+		string[] parts = state.Split('|');
+		if (parts.Length < 3)
+		{
+			return false;
+		}
+
+		if (!int.TryParse(parts[0], out int day) || day < 0)
+		{
+			return false;
+		}
+
+		bool committed = parts[1] == "1";
+		DemandedProductIds.Clear();
+		if (!string.IsNullOrEmpty(parts[2]))
+		{
+			string[] ids = parts[2].Split(',');
+			for (int i = 0; i < ids.Length; i++)
+			{
+				if (int.TryParse(ids[i], out int id) && id >= 0)
+				{
+					DemandedProductIds.Add(id);
+				}
+			}
+		}
+
+		DemandedProductIds.Sort();
+		_lastGeneratedDay = day;
+		_dayCommitted = committed;
+		if (HasActiveDemand)
+		{
+			_overlayUntil = Time.realtimeSinceStartup + Mathf.Max(1f, DemandPlugin.OverlayDurationSeconds.Value);
+		}
+		else
+		{
+			_overlayUntil = 0f;
+		}
+
+		LogDebug("Applied host demand state day=" + day + " products=" + string.Join(", ", DemandedProductIds));
+		return true;
 	}
 
 	internal static void ApplyToShoppingList(ItemQuantity shoppingList)
 	{
 		if (!DemandPlugin.Enabled.Value || !HasActiveDemand || shoppingList == null)
+		{
+			return;
+		}
+
+		if (DemandNetworkSync.InMultiplayer && !DemandNetworkSync.PeersMatch && !DemandNetworkSync.IsHost)
 		{
 			return;
 		}

@@ -156,6 +156,30 @@ public class PCTrainingApp : MonoBehaviour
 		{
 			Plugin.LogWarn("IceCreamHelper sync failed: " + ex.Message);
 		}
+		try
+		{
+			JanitorSkillManager.Instance.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Janitor sync failed: " + ex.Message);
+		}
+		try
+		{
+			SecuritySkillManager.Instance.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Security sync failed: " + ex.Message);
+		}
+		try
+		{
+			CsHelperSkillManager.Instance.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("CsHelper sync failed: " + ex.Message);
+		}
 	}
 
 	private void LoadScreen(GameObject screenObject, GameObject managementApp)

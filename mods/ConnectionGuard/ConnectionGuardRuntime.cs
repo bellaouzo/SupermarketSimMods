@@ -1,4 +1,5 @@
 using System;
+using ExitGames.Client.Photon;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
@@ -10,6 +11,8 @@ namespace ConnectionGuard;
 
 internal sealed class ConnectionGuardRuntime : MonoBehaviour
 {
+	private const string HandshakeKey = "cg_hs";
+
 	private static ConnectionGuardRuntime _instance;
 
 	private GameObject _hudRoot;
@@ -25,6 +28,9 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 	private int _appliedTimeoutMs = -1;
 	private string _cachedSceneName = string.Empty;
 	private bool _cachedGameplayScene;
+	private bool _wasInRoom;
+	private bool _loggedInstallReminder;
+	private string _lastHandshakeWarn = string.Empty;
 
 	public ConnectionGuardRuntime(IntPtr ptr)
 		: base(ptr)
@@ -81,7 +87,113 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 			TryApplyTimeouts();
 		}
 
+		TickHandshake();
 		UpdatePingHud();
+	}
+
+	private void TickHandshake()
+	{
+		if (!TryGetInRoom(out bool inRoom))
+		{
+			return;
+		}
+
+		if (inRoom && !_wasInRoom)
+		{
+			_loggedInstallReminder = false;
+			_lastHandshakeWarn = string.Empty;
+		}
+		else if (!inRoom && _wasInRoom)
+		{
+			_loggedInstallReminder = false;
+			_lastHandshakeWarn = string.Empty;
+		}
+
+		_wasInRoom = inRoom;
+		if (!inRoom)
+		{
+			return;
+		}
+
+		if (!_loggedInstallReminder)
+		{
+			_loggedInstallReminder = true;
+			ConnectionGuardPlugin.LogSource.LogInfo(
+				(object)"Install ConnectionGuard on all PCs with matching timeout cfg.");
+		}
+
+		PublishOrCheckHandshake();
+	}
+
+	private static string BuildHandshakeValue()
+	{
+		int timeoutMs = Mathf.Clamp(ConnectionGuardPlugin.DisconnectTimeoutMs.Value, 10000, 180000);
+		int allowance = Mathf.Clamp(ConnectionGuardPlugin.SentCountAllowance.Value, 5, 20);
+		int quickResend = Mathf.Clamp(ConnectionGuardPlugin.QuickResends.Value, 2, 10);
+		return ConnectionGuardPlugin.PluginVersion + "|" + timeoutMs + "|" + allowance + "|" + quickResend;
+	}
+
+	private void PublishOrCheckHandshake()
+	{
+		try
+		{
+			Room room = PhotonNetwork.CurrentRoom;
+			if (room == null)
+			{
+				return;
+			}
+
+			string local = BuildHandshakeValue();
+			bool isHost;
+			try
+			{
+				isHost = PhotonNetwork.IsMasterClient;
+			}
+			catch
+			{
+				isHost = false;
+			}
+
+			if (isHost)
+			{
+				object existing = null;
+				if (room.CustomProperties != null && room.CustomProperties.ContainsKey(HandshakeKey))
+				{
+					existing = room.CustomProperties[HandshakeKey];
+				}
+
+				if (existing == null || existing.ToString() != local)
+				{
+					Hashtable props = new Hashtable { [HandshakeKey] = local };
+					room.SetCustomProperties(props);
+				}
+
+				return;
+			}
+
+			if (room.CustomProperties == null || !room.CustomProperties.ContainsKey(HandshakeKey))
+			{
+				return;
+			}
+
+			string roomValue = room.CustomProperties[HandshakeKey]?.ToString() ?? string.Empty;
+			if (string.IsNullOrEmpty(roomValue) || roomValue == local || roomValue == _lastHandshakeWarn)
+			{
+				return;
+			}
+
+			_lastHandshakeWarn = roomValue;
+			ConnectionGuardPlugin.LogSource.LogWarning(
+				(object)("ConnectionGuard timeout cfg/version mismatch with host. Local=" + local + " Room=" + roomValue
+					+ ". Match ConnectionGuard.dll + timeout cfg on all PCs."));
+		}
+		catch (Exception ex)
+		{
+			if (ConnectionGuardPlugin.DebugLogging.Value)
+			{
+				ConnectionGuardPlugin.LogSource.LogWarning((object)("ConnectionGuard handshake failed: " + ex.Message));
+			}
+		}
 	}
 
 	private static bool TryGetInRoom(out bool inRoom)

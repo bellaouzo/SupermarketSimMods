@@ -7,9 +7,11 @@ using UnityEngine;
 
 namespace MultiBoxCarry;
 
-[BepInPlugin("com.yaboie88.multiboxcarry", "Multi Box Carry", "1.1.2")]
+[BepInPlugin("com.yaboie88.multiboxcarry", "Multi Box Carry", PluginVersion)]
 public class Plugin : BasePlugin
 {
+	internal const string PluginVersion = "1.1.11";
+
 	internal new static ManualLogSource Log;
 
 	private Harmony _harmony;
@@ -34,6 +36,6 @@ public class Plugin : BasePlugin
 		GameObject hudObject = new GameObject("MultiBoxCarry_HUD");
 		Object.DontDestroyOnLoad((Object)(object)hudObject);
 		hudObject.AddComponent<BoxInventoryHUD>();
-		Log.LogInfo((object)"Multi Box Carry loaded.");
+		Log.LogInfo((object)("Multi Box Carry " + PluginVersion + " loaded."));
 	}
 }

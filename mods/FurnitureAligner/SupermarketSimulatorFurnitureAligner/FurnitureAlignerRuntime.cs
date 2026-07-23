@@ -70,11 +70,23 @@ internal static class FurnitureAlignerRuntime
 
 	private static void HandleToggleHotkeys()
 	{
+		CoopHandshake.Tick();
 		ToggleEntry(FurnitureAlignerPlugin.ToggleKey.Value, FurnitureAlignerPlugin.Enabled, "Furniture Aligner");
 		ToggleExclusiveEntry(FurnitureAlignerPlugin.EdgeAlignKey.Value, FurnitureAlignerPlugin.EdgeAlignEnabled, "Edge alignment", FurnitureAlignerPlugin.CenterLineEnabled, FurnitureAlignerPlugin.GridSnapEnabled);
 		ToggleExclusiveEntry(FurnitureAlignerPlugin.CenterLineKey.Value, FurnitureAlignerPlugin.CenterLineEnabled, "Center-line alignment", FurnitureAlignerPlugin.EdgeAlignEnabled, FurnitureAlignerPlugin.GridSnapEnabled);
 		ToggleExclusiveEntry(FurnitureAlignerPlugin.GridSnapKey.Value, FurnitureAlignerPlugin.GridSnapEnabled, "Virtual grid snapping", FurnitureAlignerPlugin.EdgeAlignEnabled, FurnitureAlignerPlugin.CenterLineEnabled);
-		ToggleEntry(FurnitureAlignerPlugin.OutsideKey.Value, FurnitureAlignerPlugin.AllowOutside, "Outside placement");
+		if (CoopPlacement.InMultiplayer)
+		{
+			if (FurnitureAlignerPlugin.OutsideKey.Value != KeyCode.None
+				&& Input.GetKeyDown(FurnitureAlignerPlugin.OutsideKey.Value))
+			{
+				FurnitureAlignerPlugin.LogSource.LogInfo("Outside placement toggle ignored in multiplayer.");
+			}
+		}
+		else
+		{
+			ToggleEntry(FurnitureAlignerPlugin.OutsideKey.Value, FurnitureAlignerPlugin.AllowOutside, "Outside placement");
+		}
 	}
 
 	internal static Vector3 ApplyAlignment(Transform currentFurniture, Vector3 targetPos)

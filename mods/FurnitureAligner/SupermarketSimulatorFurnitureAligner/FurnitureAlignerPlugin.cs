@@ -17,7 +17,7 @@ public sealed class FurnitureAlignerPlugin : BasePlugin
 
 	public const string PluginName = "CS - Furniture Aligner";
 
-	public const string PluginVersion = "1.2.5";
+	public const string PluginVersion = "1.2.6";
 
 	internal static ManualLogSource LogSource;
 

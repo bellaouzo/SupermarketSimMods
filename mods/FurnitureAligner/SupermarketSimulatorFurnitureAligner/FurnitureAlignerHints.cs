@@ -75,7 +75,10 @@ internal static class FurnitureAlignerHints
 			Add(FurnitureAlignerPlugin.EdgeAlignKey.Value, "Edge Align (" + OnOff(FurnitureAlignerPlugin.EdgeAlignEnabled.Value) + ")");
 			Add(FurnitureAlignerPlugin.CenterLineKey.Value, "Center Align (" + OnOff(FurnitureAlignerPlugin.CenterLineEnabled.Value) + ")");
 			Add(FurnitureAlignerPlugin.GridSnapKey.Value, "Grid Snap (" + OnOff(FurnitureAlignerPlugin.GridSnapEnabled.Value) + ")");
-			Add(FurnitureAlignerPlugin.OutsideKey.Value, "Outside Place (" + OnOff(FurnitureAlignerPlugin.AllowOutside.Value) + ")");
+			string outsideLabel = CoopPlacement.InMultiplayer
+				? "Outside (disabled in co-op)"
+				: "Outside Place (" + OnOff(FurnitureAlignerPlugin.AllowOutside.Value) + ")";
+			Add(FurnitureAlignerPlugin.OutsideKey.Value, outsideLabel);
 			Add(FurnitureAlignerPlugin.NudgeResetKey.Value, "Reset Nudge");
 			Add(FurnitureAlignerPlugin.ToggleKey.Value, "Aligner (" + OnOff(FurnitureAlignerPlugin.Enabled.Value) + ")");
 		}
@@ -133,6 +136,7 @@ internal static class FurnitureAlignerHints
 		sb.Append(FurnitureAlignerPlugin.CenterLineEnabled.Value ? '1' : '0').Append('|');
 		sb.Append(FurnitureAlignerPlugin.GridSnapEnabled.Value ? '1' : '0').Append('|');
 		sb.Append(FurnitureAlignerPlugin.AllowOutside.Value ? '1' : '0').Append('|');
+		sb.Append(CoopPlacement.InMultiplayer ? '1' : '0').Append('|');
 		sb.Append((int)FurnitureAlignerPlugin.EdgeAlignKey.Value).Append('|');
 		sb.Append((int)FurnitureAlignerPlugin.CenterLineKey.Value).Append('|');
 		sb.Append((int)FurnitureAlignerPlugin.GridSnapKey.Value).Append('|');

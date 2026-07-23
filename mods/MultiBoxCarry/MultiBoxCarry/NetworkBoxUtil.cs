@@ -34,7 +34,7 @@ internal static class NetworkBoxUtil
 		}
 	}
 
-	internal static void MarkReleased(IQueuableBox queueBox)
+	internal static void MarkHeld(IQueuableBox queueBox)
 	{
 		if (queueBox == null || !CoopPlayer.InMultiplayer)
 		{
@@ -43,6 +43,41 @@ internal static class NetworkBoxUtil
 
 		try
 		{
+			NetworkBox networkBox = GetNetworkBox(queueBox);
+			if ((Object)(object)networkBox == (Object)null)
+			{
+				return;
+			}
+
+			PlayerInstance local = CoopPlayer.GetLocalPlayerInstance();
+			if ((Object)(object)local != (Object)null)
+			{
+				networkBox.PickUp_Broadcast(local);
+			}
+		}
+		catch (Exception ex)
+		{
+			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] MarkHeld failed: " + ex.Message));
+		}
+	}
+
+	internal static void MarkReleased(IQueuableBox queueBox)
+	{
+		if (queueBox == null)
+		{
+			return;
+		}
+
+		try
+		{
+			ClearLocalOccupy(queueBox);
+			BoxUtility.PrepareBoxForWorld(queueBox);
+
+			if (!CoopPlayer.InMultiplayer)
+			{
+				return;
+			}
+
 			NetworkBox networkBox = GetNetworkBox(queueBox);
 			if ((Object)(object)networkBox == (Object)null)
 			{
@@ -58,6 +93,81 @@ internal static class NetworkBoxUtil
 		}
 	}
 
+	internal static void PrepareForHandPickup(IQueuableBox queueBox)
+	{
+		if (queueBox == null)
+		{
+			return;
+		}
+
+		try
+		{
+			ClearLocalOccupy(queueBox);
+
+			if (!CoopPlayer.InMultiplayer)
+			{
+				return;
+			}
+
+			NetworkBox networkBox = GetNetworkBox(queueBox);
+			if ((Object)(object)networkBox == (Object)null)
+			{
+				return;
+			}
+
+			networkBox.IsNetworkOccupied = false;
+			networkBox.DisableNetworkTransformSync(false);
+		}
+		catch (Exception ex)
+		{
+			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] PrepareForHandPickup failed: " + ex.Message));
+		}
+	}
+
+	internal static void ReleaseAllQueued(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
+		if (inventory == null || inventory.IsEmpty)
+		{
+			return;
+		}
+
+		for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
+		{
+			MarkReleased(inventory.QueuedBoxes[i]);
+		}
+	}
+
+	internal static void FlushOnLeave()
+	{
+		PlayerInventoryManager.FlushAll();
+	}
+
+	private static void ClearLocalOccupy(IQueuableBox queueBox)
+	{
+		if (queueBox is not BoxAdapter adapter)
+		{
+			return;
+		}
+
+		Box box = adapter.GetBox();
+		if ((Object)(object)box == (Object)null)
+		{
+			return;
+		}
+
+		Transform occupyOwner = box.OccupyOwner;
+		if ((Object)(object)occupyOwner != (Object)null)
+		{
+			box.SetOccupy(false, occupyOwner);
+		}
+	}
+
 	private static NetworkBox GetNetworkBox(IQueuableBox queueBox)
 	{
 		if (queueBox?.transform == null)
@@ -65,7 +175,20 @@ internal static class NetworkBoxUtil
 			return null;
 		}
 
-		return ((Component)queueBox.transform).GetComponent<NetworkBox>()
-			?? ((Component)queueBox.transform).GetComponentInParent<NetworkBox>();
+		try
+		{
+			Transform transform = queueBox.transform;
+			if ((Object)(object)transform == (Object)null)
+			{
+				return null;
+			}
+
+			return ((Component)transform).GetComponent<NetworkBox>()
+				?? ((Component)transform).GetComponentInParent<NetworkBox>();
+		}
+		catch
+		{
+			return null;
+		}
 	}
 }

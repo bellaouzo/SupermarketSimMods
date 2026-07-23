@@ -19,7 +19,7 @@ public sealed class SmartStockOrderPlugin : BasePlugin
 
 	public const string PluginName = "CS - Smart Stock Order";
 
-	public const string PluginVersion = "1.2.6";
+	public const string PluginVersion = "1.2.7";
 
 	internal static ManualLogSource LogSource;
 

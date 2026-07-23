@@ -61,6 +61,14 @@ internal static class QueuePickUpPatch
 			{
 				return true;
 			}
+			if (CoopPlayer.InMultiplayer
+				&& (!(heldQueueBox is BoxAdapter) || !(queuableBox is BoxAdapter)))
+			{
+				const string msg = "Furniture/floor boxes cannot be multi-carried in co-op";
+				Plugin.Log.LogWarning((object)msg);
+				ShowWarningMessage(msg);
+				return true;
+			}
 			BoxInventory inventory = PlayerInventoryManager.GetInventory(__instance);
 			if (inventory == null)
 			{

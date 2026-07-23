@@ -210,7 +210,11 @@ public abstract class EmployeeSkillManager<S, ST, D, E, T> where S : EmployeeSki
 
 	public void GenerateSkillIndiactor(S skill)
 	{
-		//IL_0089: Unknown result type (might be due to invalid IL or missing references)
+		if (skill?.Employee == null || SkillIndicatorGenerator.SkillIndicatorTmpl == null)
+		{
+			return;
+		}
+
 		T employee = skill.Employee;
 		if ((Object)(object)((Component)(object)employee).GetComponentInChildren<SkillIndicator>() == (Object)null)
 		{

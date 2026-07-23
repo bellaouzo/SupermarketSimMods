@@ -7,6 +7,13 @@ namespace SupermarketSimulatorShelfProductSwapper;
 
 internal static class ShelfProductSwapperRuntime
 {
+	internal struct RemoteBoxEntry
+	{
+		internal int ProductId;
+
+		internal int ProductCount;
+	}
+
 	private struct SlotSnapshot
 	{
 		internal int ProductId;
@@ -399,6 +406,13 @@ internal static class ShelfProductSwapperRuntime
 			ShelfProductSwapperPlugin.LogSource.LogInfo((object)"Shelf swap blocked: display shelves and box racks cannot be swapped with each other.");
 			return;
 		}
+		if (NetworkShelfSync.InMultiplayer && !NetworkShelfSync.CanSwapInMultiplayer)
+		{
+			ShelfProductSwapperPlugin.LogSource.LogWarning(
+				(object)("Shelf swap blocked: co-op handshake mismatch or missing (sps_hs="
+					+ ShelfProductSwapperPlugin.PluginVersion + "). Match mods on all PCs."));
+			return;
+		}
 		SlotSnapshot slotSnapshot = SlotSnapshot.From(slot);
 		if (!slotSnapshot.HasProduct && !ShelfProductSwapperPlugin.AllowEmptySlots.Value)
 		{
@@ -427,17 +441,11 @@ internal static class ShelfProductSwapperRuntime
 			return;
 		}
 		DisplaySlot source = _selectedSlot;
-		if (!SwapSlots(source, slot))
+		if (!NetworkShelfSync.TryBeginDisplaySwap(source, slot))
 		{
-			ShelfProductSwapperPlugin.LogSource.LogWarning((object)"Shelf swap failed: could not move products using the original shelf APIs.");
-			ClearSelection();
-			UpdateMarkers();
 			return;
 		}
-		NetworkShelfSync.SyncDisplayAfterSwap(source, slot);
-		ShelfProductSwapperPlugin.LogSource.LogInfo((object)("Shelf swap complete: " + Describe(slotSnapshot2) + " <-> " + Describe(slotSnapshot) + "."));
-		ClearSelection();
-		UpdateMarkers();
+		ExecuteDisplaySwap(source, slot);
 	}
 
 	private static void HandleRackSlotSwapKey(RackSlot slot)
@@ -445,6 +453,13 @@ internal static class ShelfProductSwapperRuntime
 		if ((Object)(object)_selectedSlot != (Object)null)
 		{
 			ShelfProductSwapperPlugin.LogSource.LogInfo((object)"Shelf swap blocked: display shelves and box racks cannot be swapped with each other.");
+			return;
+		}
+		if (NetworkShelfSync.InMultiplayer && !NetworkShelfSync.CanSwapInMultiplayer)
+		{
+			ShelfProductSwapperPlugin.LogSource.LogWarning(
+				(object)("Box rack swap blocked: co-op handshake mismatch or missing (sps_hs="
+					+ ShelfProductSwapperPlugin.PluginVersion + "). Match mods on all PCs."));
 			return;
 		}
 		RackSlotSnapshot snapshot = RackSlotSnapshot.From(slot);
@@ -471,15 +486,65 @@ internal static class ShelfProductSwapperRuntime
 		RackSlotSnapshot snapshot2 = RackSlotSnapshot.From(_selectedRackSlot);
 		ShelfProductSwapperPlugin.LogSource.LogInfo((object)("Box rack swap labels: source label=" + snapshot2.HasLabel + "/" + snapshot2.HasLabelData + " target label=" + snapshot.HasLabel + "/" + snapshot.HasLabelData + "."));
 		RackSlot source = _selectedRackSlot;
-		if (!SwapRackSlots(source, slot))
+		if (!NetworkShelfSync.TryBeginRackSwap(source, slot))
+		{
+			return;
+		}
+		ExecuteRackSwap(source, slot);
+	}
+
+	internal static void CompletePendingDisplaySwap(DisplaySlot source, DisplaySlot target)
+	{
+		if ((Object)(object)source == (Object)null || (Object)(object)target == (Object)null)
+		{
+			return;
+		}
+
+		ExecuteDisplaySwap(source, target);
+	}
+
+	internal static void CompletePendingRackSwap(RackSlot source, RackSlot target)
+	{
+		if ((Object)(object)source == (Object)null || (Object)(object)target == (Object)null)
+		{
+			return;
+		}
+
+		ExecuteRackSwap(source, target);
+	}
+
+	private static void ExecuteDisplaySwap(DisplaySlot source, DisplaySlot target)
+	{
+		SlotSnapshot beforeSource = SlotSnapshot.From(source);
+		SlotSnapshot beforeTarget = SlotSnapshot.From(target);
+		if (!SwapSlots(source, target))
+		{
+			ShelfProductSwapperPlugin.LogSource.LogWarning((object)"Shelf swap failed: could not move products using the original shelf APIs.");
+			ClearSelection();
+			UpdateMarkers();
+			return;
+		}
+
+		NetworkShelfSync.SyncDisplayAfterSwap(source, target);
+		ShelfProductSwapperPlugin.LogSource.LogInfo((object)("Shelf swap complete: " + Describe(beforeSource) + " <-> " + Describe(beforeTarget) + "."));
+		ClearSelection();
+		UpdateMarkers();
+	}
+
+	private static void ExecuteRackSwap(RackSlot source, RackSlot target)
+	{
+		RackSlotSnapshot beforeSource = RackSlotSnapshot.From(source);
+		RackSlotSnapshot beforeTarget = RackSlotSnapshot.From(target);
+		if (!SwapRackSlots(source, target))
 		{
 			ShelfProductSwapperPlugin.LogSource.LogWarning((object)"Box rack swap failed: could not move boxes using the original rack APIs.");
 			ClearSelection();
 			UpdateMarkers();
 			return;
 		}
-		NetworkShelfSync.SyncRackAfterSwap(source, slot);
-		ShelfProductSwapperPlugin.LogSource.LogInfo((object)("Box rack swap complete: " + Describe(snapshot2) + " <-> " + Describe(snapshot) + "."));
+
+		NetworkShelfSync.SyncRackAfterSwap(source, target);
+		ShelfProductSwapperPlugin.LogSource.LogInfo((object)("Box rack swap complete: " + Describe(beforeSource) + " <-> " + Describe(beforeTarget) + "."));
 		ClearSelection();
 		UpdateMarkers();
 	}
@@ -1273,6 +1338,16 @@ internal static class ShelfProductSwapperRuntime
 		}
 	}
 
+	internal static void PrepareRemoteDisplaySlot(DisplaySlot slot)
+	{
+		if ((Object)(object)slot == (Object)null)
+		{
+			return;
+		}
+
+		slot.ResetSlot();
+	}
+
 	internal static void ApplyRemoteDisplaySlot(DisplaySlot slot, int productId, int count, int labelProductId, float labelPrice)
 	{
 		if ((Object)(object)slot == (Object)null)
@@ -1280,29 +1355,53 @@ internal static class ShelfProductSwapperRuntime
 			return;
 		}
 
-		EnsureSlotPhysicallyEmpty(slot);
-		slot.ClearProductData();
-		ClearSlotLabelVisual(slot);
+		slot.ResetSlot();
 		count = Mathf.Max(0, count);
 		if (count > 0 && productId >= 0)
 		{
 			slot.SpawnProduct(productId, count);
-			Label label = slot.Label;
-			if ((Object)(object)label != (Object)null)
-			{
-				label.SetProductIcon(productId);
-				label.ProductCount = Mathf.Max(0, slot.ProductCount);
-			}
+			TrySetFilledSlotPrice(slot, productId, labelPrice);
+			slot.SetLabel();
+			slot.SetPriceTag();
 		}
 		else if (labelProductId >= 0)
 		{
 			SetEmptySlotLabel(slot, labelProductId, labelPrice);
+			slot.SetLabel();
 		}
 
 		RefreshSlot(slot);
 	}
 
-	internal static void ApplyRemoteRackSlot(RackSlot slot, int boxId, int productId, int boxCount, int labelProductId)
+	private static void TrySetFilledSlotPrice(DisplaySlot slot, int productId, float labelPrice)
+	{
+		if ((Object)(object)slot == (Object)null || productId < 0 || slot.Data == null)
+		{
+			return;
+		}
+
+		Il2CppSystem.Collections.Generic.Dictionary<int, float> prices = slot.Data.ProductPrice;
+		if (prices == null)
+		{
+			prices = new Il2CppSystem.Collections.Generic.Dictionary<int, float>();
+			slot.Data.ProductPrice = prices;
+		}
+
+		if (prices.ContainsKey(productId))
+		{
+			prices[productId] = labelPrice;
+		}
+		else
+		{
+			prices.Add(productId, labelPrice);
+		}
+	}
+
+	internal static void ApplyRemoteRackSlot(
+		RackSlot slot,
+		int boxId,
+		int labelProductId,
+		System.Collections.Generic.List<RemoteBoxEntry> boxes)
 	{
 		if ((Object)(object)slot == (Object)null)
 		{
@@ -1321,8 +1420,8 @@ internal static class ShelfProductSwapperRuntime
 			Object.Destroy(((Component)box).gameObject);
 		}
 
-		boxCount = Mathf.Max(0, boxCount);
-		if (boxCount > 0 && boxId >= 0 && productId >= 0)
+		int boxCount = boxes != null ? boxes.Count : 0;
+		if (boxCount > 0 && boxId >= 0)
 		{
 			BoxGenerator generator = Object.FindObjectOfType<BoxGenerator>();
 			Rack rack = slot.OwnRack;
@@ -1330,10 +1429,18 @@ internal static class ShelfProductSwapperRuntime
 			{
 				for (int i = 0; i < boxCount; i++)
 				{
+					RemoteBoxEntry entry = boxes[i];
+					int productId = entry.ProductId;
+					int productCount = Mathf.Max(0, entry.ProductCount);
+					if (productId < 0)
+					{
+						continue;
+					}
+
 					BoxData data = new BoxData
 					{
 						ProductID = productId,
-						ProductCount = 1
+						ProductCount = productCount
 					};
 					Box spawned = generator.SpawnBoxInRack(
 						((Component)slot).transform.position,
@@ -1358,6 +1465,11 @@ internal static class ShelfProductSwapperRuntime
 			}
 
 			slot.Data.ProductID = labelProductId;
+			if (boxId >= 0)
+			{
+				slot.Data.BoxID = boxId;
+			}
+
 			slot.SetLabel();
 			slot.RefreshLabel();
 		}

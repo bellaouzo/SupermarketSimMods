@@ -53,6 +53,16 @@ public class IceCreamHelperSkillManager : EmployeeSkillManager<IceCreamHelperSki
 			return;
 		}
 		DeduplicateTrainingData();
+		if (PCTrainingApp.Instance != null)
+		{
+			foreach (IceCreamHelperSkillData data in TrainingData)
+			{
+				if (data?.Skill != null && (Object)(object)data.Skill.TrainingStatusPanelObj == (Object)null)
+				{
+					PCTrainingApp.Instance.RegisterEmployee(data.Skill);
+				}
+			}
+		}
 		Il2CppSystem.Collections.Generic.List<int> hired = employeeManager.IceCreamHelpersData ?? employeeManager.m_IceCreamHelpersData;
 		if (hired != null)
 		{

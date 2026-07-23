@@ -73,6 +73,18 @@
       <HintPath>$(GameInteropDir)\Unity.Localization.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="PhotonUnityNetworking">
+      <HintPath>$(GameInteropDir)\PhotonUnityNetworking.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PhotonRealtime">
+      <HintPath>$(GameInteropDir)\PhotonRealtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Photon3Unity3D">
+      <HintPath>$(GameInteropDir)\Photon3Unity3D.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <Target Name="CopyToGamePlugins" AfterTargets="Build" Condition="Exists('$(GamePluginsDir)\rodopoulos')">

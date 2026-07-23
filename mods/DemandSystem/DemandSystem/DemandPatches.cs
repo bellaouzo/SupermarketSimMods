@@ -37,6 +37,7 @@ internal static class DayCycleManagerUpdatePatch
 
 	private static void Postfix(DayCycleManager __instance)
 	{
+		DemandNetworkSync.Tick();
 		if ((Object)(object)__instance == (Object)null || Time.unscaledTime < _nextEnsure)
 		{
 			return;

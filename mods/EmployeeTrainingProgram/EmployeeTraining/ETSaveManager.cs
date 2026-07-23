@@ -4,6 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using EmployeeTraining.EmployeeBaker;
+using EmployeeTraining.EmployeeCashier;
+using EmployeeTraining.EmployeeCsHelper;
+using EmployeeTraining.EmployeeIceCream;
+using EmployeeTraining.EmployeeJanitor;
+using EmployeeTraining.EmployeeRestocker;
+using EmployeeTraining.EmployeeSecurity;
 using HarmonyLib;
 using MyBox;
 using UnityEngine;
@@ -21,6 +28,8 @@ public static class ETSaveManager
 	public static TrainingData Data { get; private set; } = new TrainingData();
 
 	private static float _nextSaveAllowedAt;
+
+	private static bool _loggedGuestSkipSave;
 
 	public static void CreateSaveDirectory()
 	{
@@ -47,10 +56,18 @@ public static class ETSaveManager
 		{
 			Plugin.LogInfo("Training Load skipped: empty game save path");
 			IsReadyToSave = true;
+			TrainingNetworkSync.NotifyLocalSaveLoaded();
 			return;
 		}
 		try
 		{
+			if (TrainingNetworkSync.InMultiplayer && !TrainingNetworkSync.IsHost)
+			{
+				Plugin.LogInfo("Guest in multiplayer: preferring host training room sync over local disk load.");
+				TrainingNetworkSync.ScheduleGuestUiRebind();
+				return;
+			}
+
 			CreateSaveDirectory();
 			string saveFilePath = GetSaveFilePath(gameFilePath);
 			Plugin.LogInfo("Loading training data from " + saveFilePath);
@@ -64,14 +81,12 @@ public static class ETSaveManager
 					Plugin.LogInfo(
 						$"Training data loaded: cashiers={Data.CashierSkills.Count}, restockers={Data.RestockerSkills.Count}, janitors={Data.JanitorSkills.Count}, bakers={Data.BakerSkills.Count}, janitorExp={SumExp(Data.JanitorSkills)}");
 					NotifySaveDataLoaded();
-					IsReadyToSave = true;
 					return;
 				}
 				if (TotalEntries(Data) > 0)
 				{
 					Plugin.LogWarn("Disk training save was empty; keeping in-memory training data.");
 					SyncAllSkills();
-					IsReadyToSave = true;
 					return;
 				}
 			}
@@ -79,7 +94,6 @@ public static class ETSaveManager
 			{
 				Plugin.LogInfo("No disk training save; keeping in-memory training data.");
 				SyncAllSkills();
-				IsReadyToSave = true;
 				return;
 			}
 			Plugin.LogInfo("Training data NOT FOUND (starting fresh for this slot)");
@@ -93,6 +107,7 @@ public static class ETSaveManager
 		finally
 		{
 			IsReadyToSave = true;
+			TrainingNetworkSync.NotifyLocalSaveLoaded();
 		}
 	}
 
@@ -101,6 +116,15 @@ public static class ETSaveManager
 		if (string.IsNullOrEmpty(gameFilePath))
 		{
 			Plugin.LogWarn("Training Save skipped: empty game save path");
+			return;
+		}
+		if (TrainingNetworkSync.InMultiplayer && !TrainingNetworkSync.IsHost)
+		{
+			if (!_loggedGuestSkipSave)
+			{
+				Plugin.LogDebug("Guest skipping training disk write in multiplayer.");
+				_loggedGuestSkipSave = true;
+			}
 			return;
 		}
 		IsReadyToSave = true;
@@ -147,6 +171,16 @@ public static class ETSaveManager
 				return;
 			}
 
+			if (TrainingNetworkSync.InMultiplayer && !TrainingNetworkSync.IsHost)
+			{
+				if (!_loggedGuestSkipSave)
+				{
+					Plugin.LogDebug("Guest skipping training disk write in multiplayer.");
+					_loggedGuestSkipSave = true;
+				}
+				return;
+			}
+
 			float now = Time.unscaledTime;
 			if (!force && now < _nextSaveAllowedAt)
 			{
@@ -177,6 +211,74 @@ public static class ETSaveManager
 
 		Data = data;
 		SyncAllSkills();
+		RebindLiveEmployees();
+		TrainingNetworkSync.ScheduleGuestUiRebind();
+	}
+
+	public static void RebindLiveEmployees()
+	{
+		try
+		{
+			CashierSkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Cashier rebind after network apply failed: " + ex.Message);
+		}
+
+		try
+		{
+			RestockerSkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Restocker rebind after network apply failed: " + ex.Message);
+		}
+
+		try
+		{
+			BakerSkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Baker rebind after network apply failed: " + ex.Message);
+		}
+
+		try
+		{
+			IceCreamHelperSkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Ice cream rebind after network apply failed: " + ex.Message);
+		}
+
+		try
+		{
+			JanitorSkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Janitor rebind after network apply failed: " + ex.Message);
+		}
+
+		try
+		{
+			SecuritySkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Security rebind after network apply failed: " + ex.Message);
+		}
+
+		try
+		{
+			CsHelperSkillManager.Instance?.SyncExisting();
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("CsHelper rebind after network apply failed: " + ex.Message);
+		}
 	}
 
 	public static void Clear()

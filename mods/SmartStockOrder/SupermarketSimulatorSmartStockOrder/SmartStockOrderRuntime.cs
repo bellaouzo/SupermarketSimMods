@@ -77,17 +77,25 @@ internal static class SmartStockOrderRuntime
 		if (Time.frameCount != _lastHotkeyFrame)
 		{
 			_lastHotkeyFrame = Time.frameCount;
+			CoopHandshake.Tick();
 			bool refillPressed = Input.GetKeyDown(SmartStockOrderPlugin.TabletRefillKey.Value);
 			bool minimumPressed = Input.GetKeyDown(SmartStockOrderPlugin.TabletMinimumKey.Value);
 			if (refillPressed || minimumPressed)
 			{
-				if (refillPressed)
+				if (NetworkCartUtil.InMultiplayer && !CoopHandshake.PeersMatch)
 				{
-					MarkTabletAction(OrderFull());
+					CoopHandshake.WarnBulkGateOnce();
 				}
-				if (minimumPressed)
+				else
 				{
-					MarkTabletAction(OrderMinimum());
+					if (refillPressed)
+					{
+						MarkTabletAction(OrderFull());
+					}
+					if (minimumPressed)
+					{
+						MarkTabletAction(OrderMinimum());
+					}
 				}
 			}
 
