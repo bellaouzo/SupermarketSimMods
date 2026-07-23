@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!-- Shared game / BepInEx paths for all mods in this repo -->
+    <GameDir Condition="'$(GameDir)' == ''">C:\Users\gregp\Desktop\Games\Supermarket.Sim.v1.4.2.ALL.DLC\Supermarket.Sim.v1.4.2.ALL.DLC</GameDir>
+    <BepInExDir>$(GameDir)\BepInEx</BepInExDir>
+    <GameInteropDir>$(BepInExDir)\interop</GameInteropDir>
+    <GamePluginsDir>$(BepInExDir)\plugins</GamePluginsDir>
+  </PropertyGroup>
+</Project>

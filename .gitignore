@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.vs/
+.cursor/
+*.user
+*.suo
+*.DotSettings.user
+
+# Local machine override (optional)
+Directory.Build.props.user
+
+# Decompile / ILSpy / reflection scratch — keep locally, do not ship
+reference/
