@@ -74,36 +74,10 @@ internal static class PlayerObjectHolder_DropObject_Patch
 
 			NetworkBoxUtil.ClearOccupyFlags(new BoxAdapter(dropped));
 
-			GameObject current = null;
-			if ((Object)(object)__instance.CurrentObject != (Object)null)
-			{
-				current = ((Il2CppObjectBase)__instance.CurrentObject).TryCast<GameObject>();
-			}
-
-			bool currentIsDropped = (Object)(object)current != (Object)null
-				&& (Object)(object)current.GetComponent<Box>() == (Object)(object)dropped;
-			if ((Object)(object)current == (Object)null || currentIsDropped)
-			{
-				__instance.SetNullCurrentObject();
-				BoxInteraction boxInteraction = ((Component)__instance).GetComponent<BoxInteraction>();
-				if ((Object)(object)boxInteraction != (Object)null)
-				{
-					if ((Object)(object)boxInteraction.m_Box == (Object)(object)dropped)
-					{
-						boxInteraction.m_Box = null;
-					}
-
-					if (boxInteraction.m_PlacingMode)
-					{
-						boxInteraction.m_PlacingMode = false;
-					}
-				}
-			}
-
-			// Do NOT promote or sanitize here: DropObject is called from inside
-			// vanilla BoxInteraction.DropBox, and mutating m_Box mid-drop makes the
-			// rest of the vanilla drop (network broadcast) target the newly promoted
-			// box. AutoRefill recovers and promotes on the next frame.
+			// Do NOT null m_Box/CurrentObject or promote here: DropObject is called
+			// from inside vanilla BoxInteraction.DropBox, which still needs m_Box
+			// for its network broadcast and cleanup after this returns. Vanilla
+			// clears its own state; AutoRefill recovers and promotes next frame.
 		}
 		catch (Exception ex)
 		{
