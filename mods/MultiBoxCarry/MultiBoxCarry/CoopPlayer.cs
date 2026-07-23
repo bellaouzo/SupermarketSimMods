@@ -7,6 +7,12 @@ internal static class CoopPlayer
 {
 	private static PlayerInteraction _cachedLocal;
 	private static float _nextLocalLookup;
+	private static bool _hasCachedLocal;
+
+	internal static PlayerInteraction CachedLocal => _cachedLocal;
+
+	internal static bool HasCachedLocal =>
+		_hasCachedLocal && (Object)(object)_cachedLocal != (Object)null;
 
 	internal static bool InMultiplayer
 	{
@@ -23,6 +29,25 @@ internal static class CoopPlayer
 		}
 	}
 
+	internal static void NoteLocal(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		_cachedLocal = player;
+		_hasCachedLocal = true;
+		_nextLocalLookup = Time.unscaledTime + 30f;
+	}
+
+	internal static void ClearLocalCache()
+	{
+		_cachedLocal = null;
+		_hasCachedLocal = false;
+		_nextLocalLookup = 0f;
+	}
+
 	internal static bool IsLocal(PlayerInteraction player)
 	{
 		if ((Object)(object)player == (Object)null)
@@ -30,44 +55,67 @@ internal static class CoopPlayer
 			return false;
 		}
 
+		if (HasCachedLocal && (Object)(object)_cachedLocal == (Object)(object)player)
+		{
+			return true;
+		}
+
 		if (!InMultiplayer)
 		{
+			NoteLocal(player);
 			return true;
 		}
 
 		NetworkPlayer networkPlayer = ((Component)player).GetComponentInParent<NetworkPlayer>();
 		if ((Object)(object)networkPlayer != (Object)null)
 		{
-			return networkPlayer.IsLocalPlayer || networkPlayer.m_IsLocalPlayer;
+			bool local = networkPlayer.IsLocalPlayer || networkPlayer.m_IsLocalPlayer;
+			if (local)
+			{
+				NoteLocal(player);
+			}
+
+			return local;
 		}
 
 		PlayerInstance instance = ((Component)player).GetComponentInParent<PlayerInstance>();
 		if ((Object)(object)instance != (Object)null)
 		{
-			return instance.IsLocalPlayerInstance;
+			bool local = instance.IsLocalPlayerInstance;
+			if (local)
+			{
+				NoteLocal(player);
+			}
+
+			return local;
 		}
 
-		return true;
+		return false;
 	}
 
 	internal static PlayerInteraction GetLocalPlayerInteraction()
 	{
-		if ((Object)(object)_cachedLocal != (Object)null && Time.unscaledTime < _nextLocalLookup)
+		if (HasCachedLocal)
 		{
 			return _cachedLocal;
 		}
 
-		_nextLocalLookup = Time.unscaledTime + 1f;
+		if (Time.unscaledTime < _nextLocalLookup)
+		{
+			return null;
+		}
+
+		_nextLocalLookup = Time.unscaledTime + 2f;
 		PlayerInteraction[] players = Object.FindObjectsOfType<PlayerInteraction>();
 		if (players == null || players.Length == 0)
 		{
-			_cachedLocal = null;
+			ClearLocalCache();
 			return null;
 		}
 
 		if (!InMultiplayer)
 		{
-			_cachedLocal = players[0];
+			NoteLocal(players[0]);
 			return _cachedLocal;
 		}
 
@@ -75,12 +123,11 @@ internal static class CoopPlayer
 		{
 			if (IsLocal(player))
 			{
-				_cachedLocal = player;
 				return _cachedLocal;
 			}
 		}
 
-		_cachedLocal = null;
+		ClearLocalCache();
 		return null;
 	}
 

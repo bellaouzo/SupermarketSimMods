@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using __Project__.Scripts.FloorPaintSystem;
@@ -8,12 +9,32 @@ internal static class BoxUtility
 {
 	public static IQueuableBox GetHeldQueueBox(PlayerObjectHolder holder)
 	{
-		if ((Object)(object)holder == (Object)null || (Object)(object)holder.CurrentObject == (Object)null)
+		if ((Object)(object)holder == (Object)null)
 		{
 			return null;
 		}
 
-		GameObject current = ((Il2CppObjectBase)holder.CurrentObject).TryCast<GameObject>();
+		if ((Object)(object)holder.CurrentObject != (Object)null)
+		{
+			GameObject current = ((Il2CppObjectBase)holder.CurrentObject).TryCast<GameObject>();
+			IQueuableBox fromCurrent = GetQueueBoxFromGameObject(current);
+			if (fromCurrent != null)
+			{
+				return fromCurrent;
+			}
+		}
+
+		BoxInteraction boxInteraction = ((Component)holder).GetComponent<BoxInteraction>();
+		if ((Object)(object)boxInteraction != (Object)null && (Object)(object)boxInteraction.m_Box != (Object)null)
+		{
+			return new BoxAdapter(boxInteraction.m_Box);
+		}
+
+		return null;
+	}
+
+	private static IQueuableBox GetQueueBoxFromGameObject(GameObject current)
+	{
 		if ((Object)(object)current == (Object)null)
 		{
 			return null;
@@ -38,6 +59,67 @@ internal static class BoxUtility
 		}
 
 		return null;
+	}
+
+	internal static string Describe(Box box)
+	{
+		if ((Object)(object)box == (Object)null)
+		{
+			return "<null>";
+		}
+
+		try
+		{
+			return ((Object)box).name + "#" + ((Object)box).GetInstanceID();
+		}
+		catch
+		{
+			return "<gone>";
+		}
+	}
+
+	internal static string Describe(IQueuableBox queueBox)
+	{
+		if (queueBox == null)
+		{
+			return "<null>";
+		}
+
+		return queueBox is BoxAdapter adapter ? Describe(adapter.GetBox()) : queueBox.GetType().Name;
+	}
+
+	internal static bool SameBox(object a, object b)
+	{
+		if (ReferenceEquals(a, b))
+		{
+			return true;
+		}
+
+		// Il2Cpp interop can hand out distinct managed wrappers for the same
+		// native object; compare as Unity objects (native identity) when possible.
+		if (a is Object unityA && b is Object unityB)
+		{
+			return (Object)(object)unityA == (Object)(object)unityB;
+		}
+
+		return false;
+	}
+
+	internal static bool IsLocalInventoryBox(Box box, PlayerInteraction player)
+	{
+		if ((Object)(object)box == (Object)null || (Object)(object)player == (Object)null)
+		{
+			return false;
+		}
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		IQueuableBox held = GetHeldQueueBox(holder);
+		if (held is BoxAdapter heldAdapter && (Object)(object)heldAdapter.GetBox() == (Object)(object)box)
+		{
+			return true;
+		}
+
+		return IsQueuedProductBox(box);
 	}
 
 	private static FurniturePlacingMode _cachedPlacingMode;
@@ -87,14 +169,19 @@ internal static class BoxUtility
 
 	internal static void HideAndAttachShared(Transform playerTransform, IQueuableBox queueBox, Vector3 localOffset)
 	{
-		//IL_002c: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0039: Unknown result type (might be due to invalid IL or missing references)
-		SetBoxVisible(queueBox, visible: false);
+		if (queueBox == null || IsDestroyed(queueBox) || (Object)(object)playerTransform == (Object)null)
+		{
+			return;
+		}
+
 		SetBoxColliders(queueBox, enabled: false);
 		SetBoxPhysicsQueued(queueBox);
-		queueBox.transform.SetParent(playerTransform, false);
-		queueBox.transform.localPosition = localOffset;
-		queueBox.transform.localRotation = Quaternion.identity;
+		Transform transform = queueBox.transform;
+		transform.SetParent(playerTransform, false);
+		transform.localPosition = localOffset;
+		transform.localRotation = Quaternion.identity;
+		transform.localScale = Vector3.zero;
+		SetBoxVisible(queueBox, visible: true);
 	}
 
 	public static void RestoreBox(IQueuableBox queueBox, Transform playerTransform)
@@ -127,25 +214,91 @@ internal static class BoxUtility
 
 	internal static void RestoreShared(Transform playerTransform, IQueuableBox queueBox)
 	{
-		queueBox.transform.SetParent((Transform)null, true);
-		SetBoxVisible(queueBox, visible: true);
-		SetBoxColliders(queueBox, enabled: true);
+		if (queueBox == null || IsDestroyed(queueBox))
+		{
+			return;
+		}
+
+		Transform transform = queueBox.transform;
+		transform.SetParent((Transform)null, true);
+		transform.localScale = Vector3.one;
+		EnsurePresented(queueBox);
 		SetBoxPhysicsWorld(queueBox);
 	}
 
 	public static void SetBoxVisible(IQueuableBox queueBox, bool visible)
 	{
-		if (queueBox == null)
+		if (queueBox == null || IsDestroyed(queueBox))
 		{
 			return;
 		}
-		foreach (Renderer componentsInChild in ((Component)queueBox.transform).gameObject.GetComponentsInChildren<Renderer>(true))
+
+		GameObject root = ((Component)queueBox.transform).gameObject;
+		if (!root.activeSelf)
 		{
-			if ((Object)(object)componentsInChild != (Object)null)
+			root.SetActive(true);
+		}
+
+		Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+		for (int i = 0; i < renderers.Length; i++)
+		{
+			Renderer renderer = renderers[i];
+			if ((Object)(object)renderer != (Object)null)
 			{
-				componentsInChild.enabled = visible;
+				renderer.enabled = visible;
 			}
 		}
+	}
+
+	internal static void EnsurePresented(IQueuableBox queueBox)
+	{
+		if (queueBox == null || IsDestroyed(queueBox))
+		{
+			return;
+		}
+
+		Transform transform = queueBox.transform;
+		if ((Object)(object)transform != (Object)null)
+		{
+			Vector3 scale = transform.localScale;
+			if (scale.x < 0.01f || scale.y < 0.01f || scale.z < 0.01f)
+			{
+				transform.localScale = Vector3.one;
+			}
+		}
+
+		SetBoxVisible(queueBox, visible: true);
+		SetBoxColliders(queueBox, enabled: true);
+	}
+
+	internal static void EnsurePresented(Box box)
+	{
+		if ((Object)(object)box == (Object)null)
+		{
+			return;
+		}
+
+		EnsurePresented(new BoxAdapter(box));
+	}
+
+	internal static bool HasHiddenRenderer(IQueuableBox queueBox)
+	{
+		if (queueBox == null || IsDestroyed(queueBox))
+		{
+			return false;
+		}
+
+		Renderer[] renderers = ((Component)queueBox.transform).gameObject.GetComponentsInChildren<Renderer>(true);
+		for (int i = 0; i < renderers.Length; i++)
+		{
+			Renderer renderer = renderers[i];
+			if ((Object)(object)renderer != (Object)null && !renderer.enabled)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public static void SetBoxColliders(IQueuableBox queueBox, bool enabled)
@@ -259,11 +412,17 @@ internal static class BoxUtility
 			Transform transform = queueBox.transform;
 			if ((Object)(object)transform != (Object)null && (Object)(object)transform.parent != (Object)null)
 			{
-				transform.SetParent((Transform)null, true);
+				Transform parent = transform.parent;
+				bool keepParent = (Object)(object)parent != (Object)null
+					&& ((Object)(object)((Component)parent).GetComponent<RackSlot>() != (Object)null
+						|| (Object)(object)((Component)parent).GetComponentInParent<Rack>() != (Object)null);
+				if (!keepParent)
+				{
+					transform.SetParent((Transform)null, true);
+				}
 			}
 
-			SetBoxVisible(queueBox, visible: true);
-			SetBoxColliders(queueBox, enabled: true);
+			EnsurePresented(queueBox);
 			SetBoxPhysicsWorld(queueBox);
 		}
 		catch
@@ -283,7 +442,87 @@ internal static class BoxUtility
 
 	public static Vector3 GetQueueLocalOffset(int index)
 	{
-		return new Vector3(0f, -3f, -2f);
+		int i = Mathf.Max(0, index);
+		return new Vector3(0f, -3f - i * 0.35f, -2f - i * 0.75f);
+	}
+
+	internal static bool IsOnHoldPoint(Box box, PlayerObjectHolder holder)
+	{
+		if ((Object)(object)box == (Object)null || (Object)(object)holder == (Object)null)
+		{
+			return false;
+		}
+
+		Transform boxTransform = ((Component)box).transform;
+		Transform holdPoint = holder.m_ObjectHolder;
+		if ((Object)(object)boxTransform == (Object)null || (Object)(object)holdPoint == (Object)null)
+		{
+			return false;
+		}
+
+		Transform parent = boxTransform.parent;
+		return (Object)(object)parent != (Object)null
+			&& ((Object)(object)parent == (Object)(object)holdPoint || boxTransform.IsChildOf(holdPoint));
+	}
+
+	internal static Box FindOrphanHandBox(PlayerObjectHolder holder)
+	{
+		if ((Object)(object)holder == (Object)null)
+		{
+			return null;
+		}
+
+		Transform holdPoint = holder.m_ObjectHolder;
+		if ((Object)(object)holdPoint == (Object)null)
+		{
+			return null;
+		}
+
+		Box[] boxes = ((Component)holdPoint).GetComponentsInChildren<Box>(true);
+		if (boxes == null || boxes.Length == 0)
+		{
+			return null;
+		}
+
+		for (int i = 0; i < boxes.Length; i++)
+		{
+			Box box = boxes[i];
+			if ((Object)(object)box == (Object)null || IsQueuedProductBox(box))
+			{
+				continue;
+			}
+
+			if (IsOnHoldPoint(box, holder))
+			{
+				return box;
+			}
+		}
+
+		return null;
+	}
+
+	internal static void CollectHoldPointBoxes(PlayerObjectHolder holder, List<Box> results)
+	{
+		results.Clear();
+		if ((Object)(object)holder == (Object)null || (Object)(object)holder.m_ObjectHolder == (Object)null)
+		{
+			return;
+		}
+
+		Box[] boxes = ((Component)holder.m_ObjectHolder).GetComponentsInChildren<Box>(true);
+		if (boxes == null)
+		{
+			return;
+		}
+
+		for (int i = 0; i < boxes.Length; i++)
+		{
+			Box box = boxes[i];
+			if ((Object)(object)box != (Object)null)
+			{
+				results.Add(box);
+			}
+		}
 	}
 
 	internal static void ClearMatchingHighlight(Box box)

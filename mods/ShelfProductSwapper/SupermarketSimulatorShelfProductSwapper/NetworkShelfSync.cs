@@ -19,7 +19,7 @@ internal static class NetworkShelfSync
 	internal const byte RackSwapEventCode = 192;
 
 	private const string HandshakeKey = "sps_hs";
-	private const float OwnershipTimeoutSeconds = 0.5f;
+	private const float OwnershipTimeoutSeconds = 1.25f;
 	private const float ViewLockSeconds = 0.3f;
 
 	private static bool _bridgeCreated;
@@ -27,14 +27,21 @@ internal static class NetworkShelfSync
 	private static Il2CppSystem.Action<EventData> _eventHandler;
 
 	private static bool _wasInRoom;
+	private static bool _wasMaster;
 	private static bool _peersMatch = true;
 	private static string _lastHandshakeWarn = string.Empty;
+	private static float _nextHandshakeAt;
 
 	private static int _nextSeq = 1;
 	private static readonly System.Collections.Generic.Dictionary<string, int> LastAppliedSeq =
 		new System.Collections.Generic.Dictionary<string, int>();
 	private static readonly System.Collections.Generic.Dictionary<int, float> ViewLocks =
 		new System.Collections.Generic.Dictionary<int, float>();
+
+	private static byte _retryEventCode;
+	private static string _retryPayload;
+	private static int _retryAttemptsLeft;
+	private static float _nextRetryAt;
 
 	private static bool _pendingActive;
 	private static bool _pendingIsRack;
@@ -110,6 +117,7 @@ internal static class NetworkShelfSync
 	{
 		TickHandshake();
 		TickPendingOwnership();
+		TickRaiseRetry();
 		TryHookPhotonEvents();
 	}
 
@@ -291,14 +299,20 @@ internal static class NetworkShelfSync
 
 		try
 		{
+			if (!PeersMatch)
+			{
+				return;
+			}
+
 			string payload = photonEvent.CustomData != null ? photonEvent.CustomData.ToString() : null;
+			int senderActor = photonEvent.Sender;
 			if (photonEvent.Code == DisplaySwapEventCode)
 			{
-				ApplyDisplayPayload(payload);
+				ApplyDisplayPayload(payload, senderActor);
 			}
 			else if (photonEvent.Code == RackSwapEventCode)
 			{
-				ApplyRackPayload(payload);
+				ApplyRackPayload(payload, senderActor);
 			}
 		}
 		catch (Exception ex)
@@ -312,6 +326,9 @@ internal static class NetworkShelfSync
 		bool inRoom = InMultiplayer;
 		if (inRoom && !_wasInRoom)
 		{
+			_wasInRoom = true;
+			_wasMaster = IsHost;
+			_nextHandshakeAt = 0f;
 			if (IsHost)
 			{
 				PublishHandshake();
@@ -320,14 +337,20 @@ internal static class NetworkShelfSync
 			{
 				UpdatePeersMatch();
 			}
+
+			return;
 		}
-		else if (!inRoom && _wasInRoom)
+
+		if (!inRoom && _wasInRoom)
 		{
 			_peersMatch = true;
 			_lastHandshakeWarn = string.Empty;
 			ClearPendingOwnership(abort: false);
 			LastAppliedSeq.Clear();
 			ViewLocks.Clear();
+			_wasInRoom = false;
+			_wasMaster = false;
+			return;
 		}
 
 		_wasInRoom = inRoom;
@@ -336,6 +359,20 @@ internal static class NetworkShelfSync
 			return;
 		}
 
+		bool master = IsHost;
+		if (master && !_wasMaster)
+		{
+			PublishHandshake();
+			_nextHandshakeAt = Time.unscaledTime + 1f;
+		}
+
+		_wasMaster = master;
+		if (Time.unscaledTime < _nextHandshakeAt)
+		{
+			return;
+		}
+
+		_nextHandshakeAt = Time.unscaledTime + 8f;
 		UpdatePeersMatch();
 		if (IsHost)
 		{
@@ -489,7 +526,7 @@ internal static class NetworkShelfSync
 		}
 		catch
 		{
-			_peersMatch = true;
+			_peersMatch = false;
 		}
 	}
 
@@ -502,11 +539,77 @@ internal static class NetworkShelfSync
 
 	private static void Raise(byte code, string payload)
 	{
-		RaiseEventOptions options = new RaiseEventOptions
+		if (TrySendRaise(code, payload))
 		{
-			Receivers = ReceiverGroup.Others
-		};
-		PhotonNetwork.RaiseEvent(code, payload, options, SendOptions.SendReliable);
+			return;
+		}
+
+		// A false RaiseEvent means peers never saw a swap we already applied
+		// locally. Retry the same payload (seq guard makes re-apply idempotent).
+		if (_retryPayload != null)
+		{
+			ShelfProductSwapperPlugin.LogSource.LogError(
+				(object)"Swap RaiseEvent failed while a retry was already pending; older swap dropped. Co-op state may have diverged.");
+		}
+
+		_retryEventCode = code;
+		_retryPayload = payload;
+		_retryAttemptsLeft = 3;
+		_nextRetryAt = Time.realtimeSinceStartup + 0.5f;
+		ShelfProductSwapperPlugin.LogSource.LogWarning((object)"Swap RaiseEvent failed; will retry.");
+	}
+
+	private static bool TrySendRaise(byte code, string payload)
+	{
+		try
+		{
+			RaiseEventOptions options = new RaiseEventOptions
+			{
+				Receivers = ReceiverGroup.Others
+			};
+			return PhotonNetwork.RaiseEvent(code, payload, options, SendOptions.SendReliable);
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	private static void TickRaiseRetry()
+	{
+		if (_retryPayload == null)
+		{
+			return;
+		}
+
+		if (!InMultiplayer)
+		{
+			_retryPayload = null;
+			return;
+		}
+
+		if (Time.realtimeSinceStartup < _nextRetryAt)
+		{
+			return;
+		}
+
+		if (TrySendRaise(_retryEventCode, _retryPayload))
+		{
+			ShelfProductSwapperPlugin.LogSource.LogInfo((object)"Swap RaiseEvent retry succeeded.");
+			_retryPayload = null;
+			return;
+		}
+
+		_retryAttemptsLeft--;
+		if (_retryAttemptsLeft <= 0)
+		{
+			ShelfProductSwapperPlugin.LogSource.LogError(
+				(object)"Swap RaiseEvent retries exhausted. Co-op shelf state may have diverged — re-swap the slot to resync.");
+			_retryPayload = null;
+			return;
+		}
+
+		_nextRetryAt = Time.realtimeSinceStartup + 0.5f;
 	}
 
 	private static void RequestOwnership(DisplaySlot slot)
@@ -637,6 +740,7 @@ internal static class NetworkShelfSync
 		if (_nextSeq == int.MaxValue)
 		{
 			_nextSeq = 1;
+			LastAppliedSeq.Clear();
 		}
 		else
 		{
@@ -653,9 +757,9 @@ internal static class NetworkShelfSync
 			: viewB.ToString(CultureInfo.InvariantCulture) + ":" + viewA.ToString(CultureInfo.InvariantCulture);
 	}
 
-	private static bool ShouldApplySeq(int viewA, int viewB, int seq)
+	private static bool ShouldApplySeq(int viewA, int viewB, int seq, int senderActor)
 	{
-		string key = PairKey(viewA, viewB);
+		string key = PairKey(viewA, viewB) + "@" + senderActor.ToString(CultureInfo.InvariantCulture);
 		if (LastAppliedSeq.TryGetValue(key, out int last) && seq <= last)
 		{
 			return false;
@@ -719,7 +823,7 @@ internal static class NetworkShelfSync
 		return true;
 	}
 
-	private static void ApplyDisplayPayload(string payload)
+	private static void ApplyDisplayPayload(string payload, int senderActor)
 	{
 		if (string.IsNullOrEmpty(payload))
 		{
@@ -750,7 +854,7 @@ internal static class NetworkShelfSync
 			return;
 		}
 
-		if (!ShouldApplySeq(view1, view2, seq))
+		if (!ShouldApplySeq(view1, view2, seq, senderActor))
 		{
 			return;
 		}
@@ -770,7 +874,7 @@ internal static class NetworkShelfSync
 		ShelfProductSwapperPlugin.LogSource.LogInfo((object)"Applied remote shelf swap.");
 	}
 
-	private static void ApplyRackPayload(string payload)
+	private static void ApplyRackPayload(string payload, int senderActor)
 	{
 		if (string.IsNullOrEmpty(payload))
 		{
@@ -808,7 +912,7 @@ internal static class NetworkShelfSync
 			return;
 		}
 
-		if (!ShouldApplySeq(view1, view2, seq))
+		if (!ShouldApplySeq(view1, view2, seq, senderActor))
 		{
 			return;
 		}

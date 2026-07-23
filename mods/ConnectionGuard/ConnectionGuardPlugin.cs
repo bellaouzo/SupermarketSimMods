@@ -12,7 +12,7 @@ public sealed class ConnectionGuardPlugin : BasePlugin
 {
 	public const string PluginGuid = "ConnectionGuard";
 	public const string PluginName = "Connection Guard";
-	public const string PluginVersion = "1.0.5";
+	public const string PluginVersion = "1.0.7";
 
 	internal static ManualLogSource LogSource;
 
@@ -22,6 +22,7 @@ public sealed class ConnectionGuardPlugin : BasePlugin
 	internal static ConfigEntry<int> SentCountAllowance;
 	internal static ConfigEntry<int> QuickResends;
 	internal static ConfigEntry<bool> ShowPingHud;
+	internal static ConfigEntry<bool> ShowQueueOnHud;
 	internal static ConfigEntry<bool> ShowOnlyInMultiplayer;
 	internal static ConfigEntry<float> HudOffsetX;
 	internal static ConfigEntry<float> HudOffsetY;
@@ -36,24 +37,25 @@ public sealed class ConnectionGuardPlugin : BasePlugin
 		DisconnectTimeoutMs = Config.Bind(
 			"Timeouts",
 			"PhotonDisconnectTimeoutMs",
-			45000,
-			"Photon peer disconnect timeout in milliseconds. Vanilla is often ~10000. Higher = more tolerant of ping spikes.");
+			18000,
+			"Photon peer disconnect timeout in milliseconds. Vanilla is often ~10000. Keep this modest — very high values can create multi-minute action delays on bad links instead of a clean reconnect.");
 		KeepAliveInBackgroundSeconds = Config.Bind(
 			"Timeouts",
 			"KeepAliveInBackgroundSeconds",
-			120f,
+			60f,
 			"How long Photon keeps the connection when the game is in the background.");
 		SentCountAllowance = Config.Bind(
 			"Timeouts",
 			"SentCountAllowance",
-			12,
-			"Photon resend allowance before giving up on a reliable message. Higher helps bad connections.");
+			7,
+			"Photon resend allowance before giving up on a reliable message. Too high floods a bad connection and causes huge delays.");
 		QuickResends = Config.Bind(
 			"Timeouts",
 			"QuickResends",
-			5,
-			"Photon quick-resend attempts for reliable traffic.");
+			3,
+			"Photon quick-resend attempts for reliable traffic. Too high worsens backlog on unstable peers.");
 		ShowPingHud = Config.Bind("UI", "ShowPingHud", true, "Show a small ping readout on screen in multiplayer.");
+		ShowQueueOnHud = Config.Bind("UI", "ShowQueueOnHud", true, "Also show Photon command queue depth (helps spot multi-minute backlog).");
 		ShowOnlyInMultiplayer = Config.Bind("UI", "ShowOnlyInMultiplayer", true, "Hide the ping HUD when not in a Photon room.");
 		HudOffsetX = Config.Bind("UI", "HudOffsetX", -24f, "Ping HUD X offset from the top-right corner.");
 		HudOffsetY = Config.Bind("UI", "HudOffsetY", -120f, "Ping HUD Y offset from the top-right corner (more negative = lower).");
@@ -62,7 +64,9 @@ public sealed class ConnectionGuardPlugin : BasePlugin
 			HudOffsetY.Value = -120f;
 		}
 
-		DebugLogging = Config.Bind("Diagnostics", "DebugLogging", false, "Log when timeout settings are applied.");
+		DebugLogging = Config.Bind("Diagnostics", "DebugLogging", false, "Log when timeout settings are applied / backlog warnings.");
+
+		MigrateAggressiveTimeouts();
 
 		ClassInjector.RegisterTypeInIl2Cpp<ConnectionGuardRuntime>();
 		ConnectionGuardRuntime.Create();
@@ -70,5 +74,28 @@ public sealed class ConnectionGuardPlugin : BasePlugin
 		_harmony = new Harmony(PluginGuid);
 		_harmony.PatchAll(typeof(ConnectionGuardPlugin).Assembly);
 		Log.LogInfo($"{PluginName} {PluginVersion} loaded. Install on every co-op PC for best results.");
+	}
+
+	private static void MigrateAggressiveTimeouts()
+	{
+		if (DisconnectTimeoutMs.Value >= 40000)
+		{
+			DisconnectTimeoutMs.Value = 18000;
+		}
+
+		if (SentCountAllowance.Value >= 10)
+		{
+			SentCountAllowance.Value = 7;
+		}
+
+		if (QuickResends.Value >= 5)
+		{
+			QuickResends.Value = 3;
+		}
+
+		if (KeepAliveInBackgroundSeconds.Value > 90f)
+		{
+			KeepAliveInBackgroundSeconds.Value = 60f;
+		}
 	}
 }

@@ -95,6 +95,6 @@ public class IceCreamHelperSkillManager : EmployeeSkillManager<IceCreamHelperSki
 				}
 			}
 		}
-		Plugin.LogInfo($"IceCreamHelper sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"IceCreamHelper sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 }

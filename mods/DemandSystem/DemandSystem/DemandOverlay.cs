@@ -16,6 +16,12 @@ internal sealed class DemandOverlay : MonoBehaviour
 	private string _renderedKey = string.Empty;
 	private Text _titleText;
 	private Text _subtitleText;
+	private bool _wasGameplay;
+	private float _gameplayReadyAt = -1f;
+	private bool _legacyShadowRemoved;
+	private string _cachedSceneName = string.Empty;
+	private bool _cachedGameplay;
+	private float _nextIdleCheckAt;
 
 	public DemandOverlay(IntPtr ptr)
 		: base(ptr)
@@ -47,17 +53,51 @@ internal sealed class DemandOverlay : MonoBehaviour
 			BuildCanvas();
 		}
 
-		RemoveLegacyShadow();
-		bool show = DemandState.ShouldShowOverlay && IsGameplayScene();
-		if (_panelObject.activeSelf != show)
+		if (!_legacyShadowRemoved)
+		{
+			RemoveLegacyShadow();
+			_legacyShadowRemoved = true;
+		}
+
+		bool panelActive = _panelObject.activeSelf;
+		if (!panelActive && Time.unscaledTime < _nextIdleCheckAt)
+		{
+			return;
+		}
+
+		bool gameplay = IsGameplaySceneCached();
+		if (gameplay && !_wasGameplay && DemandState.HasActiveDemand)
+		{
+			DemandState.RequestOverlay();
+		}
+
+		if (!gameplay)
+		{
+			_gameplayReadyAt = -1f;
+		}
+		else if (DemandState.OverlayNeedsSettle)
+		{
+			DemandState.OverlayNeedsSettle = false;
+			_gameplayReadyAt = Time.unscaledTime + 1.5f;
+		}
+
+		_wasGameplay = gameplay;
+
+		bool settled = gameplay && (_gameplayReadyAt < 0f || Time.unscaledTime >= _gameplayReadyAt);
+		bool show = DemandState.ShouldShowOverlay && settled;
+		if (panelActive != show)
 		{
 			_panelObject.SetActive(show);
+			panelActive = show;
 		}
 
 		if (!show)
 		{
+			_nextIdleCheckAt = Time.unscaledTime + 0.25f;
 			return;
 		}
+
+		DemandState.ConsumeOverlayTime(Time.unscaledDeltaTime);
 
 		string key = DemandText.CurrentLocaleCode() + "|" + string.Join("|", DemandState.DemandedProducts);
 		if (_renderedKey != key)
@@ -127,18 +167,20 @@ internal sealed class DemandOverlay : MonoBehaviour
 		}
 	}
 
-	private static bool IsGameplayScene()
+	private bool IsGameplaySceneCached()
 	{
 		Scene scene = SceneManager.GetActiveScene();
-		string name = scene.name;
-		if (name.Contains("Menu", StringComparison.OrdinalIgnoreCase)
-			|| name.Contains("Title", StringComparison.OrdinalIgnoreCase)
-			|| name.Contains("Loading", StringComparison.OrdinalIgnoreCase))
+		string name = scene.name ?? string.Empty;
+		if (name == _cachedSceneName)
 		{
-			return false;
+			return _cachedGameplay;
 		}
 
-		return true;
+		_cachedSceneName = name;
+		_cachedGameplay = !(name.Contains("Menu", StringComparison.OrdinalIgnoreCase)
+			|| name.Contains("Title", StringComparison.OrdinalIgnoreCase)
+			|| name.Contains("Loading", StringComparison.OrdinalIgnoreCase));
+		return _cachedGameplay;
 	}
 
 	private void RebuildRows()

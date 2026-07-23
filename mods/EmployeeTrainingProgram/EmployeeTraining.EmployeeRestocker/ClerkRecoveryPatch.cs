@@ -8,7 +8,8 @@ namespace EmployeeTraining.EmployeeRestocker;
 [HarmonyPatch]
 public static class ClerkRecoveryPatch
 {
-	private static float _nextGlobalCleanup;
+	private static float _nextGlobalCleanup = float.PositiveInfinity;
+	private static float _sceneReadyAt = -1f;
 
 	[HarmonyPatch(typeof(Clerk), nameof(Clerk.SetRestockerManagementData))]
 	[HarmonyPostfix]
@@ -23,19 +24,37 @@ public static class ClerkRecoveryPatch
 			ReleaseBoxesOwnedBy(__instance.transform);
 			return;
 		}
-		RunRecoveryPass();
+		ScheduleRecoverySoon();
 	}
 
 	[HarmonyPatch(typeof(EmployeeManager), "FireRestocker")]
 	[HarmonyPostfix]
 	public static void EmployeeManager_FireRestocker_Postfix(int restockerID)
 	{
-		RunRecoveryPass();
+		ScheduleRecoverySoon();
+	}
+
+	internal static void ScheduleSceneReady()
+	{
+		_sceneReadyAt = Time.unscaledTime + 25f;
+		if (_nextGlobalCleanup > _sceneReadyAt)
+		{
+			_nextGlobalCleanup = _sceneReadyAt;
+		}
+	}
+
+	private static void ScheduleRecoverySoon()
+	{
+		float at = Time.unscaledTime + 2f;
+		if (at < _nextGlobalCleanup)
+		{
+			_nextGlobalCleanup = at;
+		}
 	}
 
 	internal static void OnSceneReady()
 	{
-		RunRecoveryPass();
+		ScheduleSceneReady();
 	}
 
 	internal static void Tick()
@@ -44,7 +63,7 @@ public static class ClerkRecoveryPatch
 		{
 			return;
 		}
-		_nextGlobalCleanup = Time.unscaledTime + 45f;
+		_nextGlobalCleanup = Time.unscaledTime + 90f;
 		RunRecoveryPass();
 	}
 
@@ -76,28 +95,32 @@ public static class ClerkRecoveryPatch
 		{
 			return;
 		}
-		Box[] boxes = UnityEngine.Object.FindObjectsOfType<Box>();
-		if (boxes == null)
-		{
-			return;
-		}
+
 		int released = 0;
-		foreach (Box box in boxes)
+		Box[] localBoxes = owner.GetComponentsInChildren<Box>(true);
+		if (localBoxes != null)
 		{
-			if ((UnityEngine.Object)(object)box == (UnityEngine.Object)null || !box.IsBoxOccupied)
+			foreach (Box box in localBoxes)
 			{
-				continue;
-			}
-			if ((UnityEngine.Object)(object)box.OccupyOwner == (UnityEngine.Object)(object)owner)
-			{
-				box.SetOccupy(false, null);
-				released++;
+				if ((UnityEngine.Object)(object)box == (UnityEngine.Object)null || !box.IsBoxOccupied)
+				{
+					continue;
+				}
+
+				if ((UnityEngine.Object)(object)box.OccupyOwner == (UnityEngine.Object)(object)owner)
+				{
+					box.SetOccupy(false, null);
+					released++;
+				}
 			}
 		}
+
 		if (released > 0)
 		{
 			Plugin.LogInfo($"Restocker recovery: released {released} box occupy lock(s) for inactive clerk.");
 		}
+
+		ScheduleRecoverySoon();
 	}
 
 	private static void ReleaseOrphanOccupiedBoxes(Box[] boxes)

@@ -2,6 +2,7 @@ using System;
 using ExitGames.Client.Photon;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine;
 
 namespace MultiBoxCarry;
 
@@ -12,6 +13,7 @@ internal static class CoopHandshake
 	private static bool _wasInRoom;
 	private static bool _peersMatch = true;
 	private static string _lastHandshakeWarn = string.Empty;
+	private static float _nextTickAt;
 
 	internal static bool PeersMatch => !CoopPlayer.InMultiplayer || _peersMatch;
 
@@ -37,6 +39,13 @@ internal static class CoopHandshake
 
 	internal static void Tick()
 	{
+		float now = Time.unscaledTime;
+		if (now < _nextTickAt)
+		{
+			return;
+		}
+
+		_nextTickAt = now + 8f;
 		bool inRoom = CoopPlayer.InMultiplayer;
 		if (inRoom && !_wasInRoom)
 		{
@@ -54,6 +63,7 @@ internal static class CoopHandshake
 			NetworkBoxUtil.FlushOnLeave();
 			_peersMatch = true;
 			_lastHandshakeWarn = string.Empty;
+			CoopPlayer.ClearLocalCache();
 		}
 
 		_wasInRoom = inRoom;
@@ -119,15 +129,24 @@ internal static class CoopHandshake
 		try
 		{
 			Room room = PhotonNetwork.CurrentRoom;
+			int playerCount = room != null ? room.PlayerCount : 0;
+			bool hasOthers = playerCount > 1;
 			if (room?.CustomProperties == null || !room.CustomProperties.ContainsKey(HandshakeKey))
 			{
-				_peersMatch = true;
+				_peersMatch = !hasOthers;
+				if (!_peersMatch && _lastHandshakeWarn != "missing")
+				{
+					_lastHandshakeWarn = "missing";
+					Plugin.Log.LogWarning(
+						(object)("MultiBoxCarry handshake missing (expected mbc_hs). Install matching MultiBoxCarry.dll on all PCs. Multi-carry blocked."));
+				}
+
 				return;
 			}
 
 			string expected = Plugin.PluginVersion;
 			string actual = room.CustomProperties[HandshakeKey]?.ToString() ?? string.Empty;
-			_peersMatch = string.IsNullOrEmpty(actual) || actual == expected;
+			_peersMatch = !string.IsNullOrEmpty(actual) && actual == expected;
 			if (!_peersMatch && actual != _lastHandshakeWarn)
 			{
 				_lastHandshakeWarn = actual;
@@ -135,10 +154,14 @@ internal static class CoopHandshake
 					(object)("MultiBoxCarry version mismatch with host. Local=" + expected + " Host=" + actual
 						+ ". Install the same MultiBoxCarry.dll on all PCs."));
 			}
+			else if (_peersMatch)
+			{
+				_lastHandshakeWarn = string.Empty;
+			}
 		}
 		catch
 		{
-			_peersMatch = true;
+			_peersMatch = false;
 		}
 	}
 }

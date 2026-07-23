@@ -78,6 +78,6 @@ public class SecuritySkillManager : EmployeeSkillManager<SecuritySkill, Security
 				}
 			}
 		}
-		Plugin.LogInfo($"Security sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"Security sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 }

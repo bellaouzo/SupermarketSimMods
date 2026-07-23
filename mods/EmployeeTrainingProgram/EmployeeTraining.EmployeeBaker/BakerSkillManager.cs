@@ -89,6 +89,6 @@ public class BakerSkillManager : EmployeeSkillManager<BakerSkill, BakerSkillTier
 				}
 			}
 		}
-		Plugin.LogInfo($"Baker sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"Baker sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 }

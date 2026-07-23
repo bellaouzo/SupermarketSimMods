@@ -166,7 +166,7 @@ internal static class ShelfProductSwapperRuntime
 
 	private static Camera _cachedCamera;
 
-	private const float HoverResolveInterval = 0.066f;
+	private const float HoverResolveInterval = 0.1f;
 
 	private const float MaxRayLateralDistance = 0.55f;
 
@@ -196,6 +196,8 @@ internal static class ShelfProductSwapperRuntime
 
 	internal static bool HasHoverTarget => (Object)(object)_hoverSlot != (Object)null || (Object)(object)_hoverRackSlot != (Object)null;
 
+	private static bool _disabledIdle;
+
 	internal static void HandleHotkey()
 	{
 		if (Time.frameCount == _lastHotkeyFrame)
@@ -207,13 +209,19 @@ internal static class ShelfProductSwapperRuntime
 		bool enabled = ShelfProductSwapperPlugin.Enabled != null && ShelfProductSwapperPlugin.Enabled.Value;
 		if (!enabled)
 		{
-			ClearSelection();
-			HideMarkers();
-			DisplaySlotByCollider.Clear();
-			RackSlotByCollider.Clear();
-			ShelfProductSwapperHints.Sync(false);
+			if (!_disabledIdle)
+			{
+				ClearSelection();
+				HideMarkers();
+				DisplaySlotByCollider.Clear();
+				RackSlotByCollider.Clear();
+				ShelfProductSwapperHints.Sync(false);
+				_disabledIdle = true;
+			}
 			return;
 		}
+
+		_disabledIdle = false;
 
 		KeyCode swapKey = ShelfProductSwapperPlugin.SwapKey.Value;
 		bool swapPressed = (int)swapKey != 0 && Input.GetKeyDown(swapKey);
@@ -293,11 +301,13 @@ internal static class ShelfProductSwapperRuntime
 			_hoverRackSlot = bestRack;
 			return;
 		}
+
 		RefreshSlotCaches();
 		if (TryGetDisplaySlotNearRay(ray, maxDistance, out _hoverSlot))
 		{
 			return;
 		}
+
 		TryGetRackSlotNearRay(ray, maxDistance, out _hoverRackSlot);
 	}
 
@@ -309,7 +319,7 @@ internal static class ShelfProductSwapperRuntime
 		}
 		_displaySlotCache = Object.FindObjectsOfType<DisplaySlot>();
 		_rackSlotCache = Object.FindObjectsOfType<RackSlot>();
-		_slotCacheTime = Time.unscaledTime + 2.5f;
+		_slotCacheTime = Time.unscaledTime + 8f;
 	}
 
 	private static bool TryGetDisplaySlotNearRay(Ray ray, float maxDistance, out DisplaySlot slot)
@@ -1500,12 +1510,12 @@ internal static class ShelfProductSwapperRuntime
 			|| (Object)(object)_hoverRackSlot != (Object)(object)_lastHoverRackSlot;
 		bool selectedChanged = (Object)(object)_selectedSlot != (Object)(object)_lastSelectedSlot
 			|| (Object)(object)_selectedRackSlot != (Object)(object)_lastSelectedRackSlot;
-		bool compatible = IsHoverCompatible();
-		bool compatibleChanged = compatible != _lastHoverCompatible;
-		if (!hoverChanged && !selectedChanged && !compatibleChanged && (Object)(object)_markerRoot != (Object)null && _markerRoot.activeSelf)
+		if (!hoverChanged && !selectedChanged && (Object)(object)_markerRoot != (Object)null && _markerRoot.activeSelf)
 		{
 			return;
 		}
+
+		bool compatible = IsHoverCompatible();
 		_lastHoverSlot = _hoverSlot;
 		_lastHoverRackSlot = _hoverRackSlot;
 		_lastSelectedSlot = _selectedSlot;

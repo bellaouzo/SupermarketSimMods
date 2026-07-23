@@ -2,6 +2,7 @@ using System;
 using ExitGames.Client.Photon;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine;
 
 namespace SupermarketSimulatorSmartStockOrder;
 
@@ -13,6 +14,7 @@ internal static class CoopHandshake
 	private static bool _peersMatch = true;
 	private static string _lastHandshakeWarn = string.Empty;
 	private static bool _bulkGateWarned;
+	private static float _nextTickAt;
 
 	internal static bool PeersMatch => !NetworkCartUtil.InMultiplayer || _peersMatch;
 
@@ -38,6 +40,13 @@ internal static class CoopHandshake
 
 	internal static void Tick()
 	{
+		float now = Time.unscaledTime;
+		if (now < _nextTickAt)
+		{
+			return;
+		}
+
+		_nextTickAt = now + 8f;
 		bool inRoom = NetworkCartUtil.InMultiplayer;
 		if (inRoom && !_wasInRoom)
 		{
@@ -92,7 +101,17 @@ internal static class CoopHandshake
 	{
 		int maxBoxes = SmartStockOrderPlugin.MaxBoxesPerRun != null ? SmartStockOrderPlugin.MaxBoxesPerRun.Value : 500;
 		bool removeLimit = SmartStockOrderPlugin.RemoveCartLimit != null && SmartStockOrderPlugin.RemoveCartLimit.Value;
-		return SmartStockOrderPlugin.PluginVersion + "|" + maxBoxes + "|" + (removeLimit ? "1" : "0");
+		bool includeRack = SmartStockOrderPlugin.IncludeRackShortage == null || SmartStockOrderPlugin.IncludeRackShortage.Value;
+		bool includeDisplay = SmartStockOrderPlugin.IncludeDisplayShelfShortage != null && SmartStockOrderPlugin.IncludeDisplayShelfShortage.Value;
+		bool boxOnly = SmartStockOrderPlugin.MinimumUsesBoxStockOnly == null || SmartStockOrderPlugin.MinimumUsesBoxStockOnly.Value;
+		int cartOverride = SmartStockOrderPlugin.CartLimitOverride != null ? SmartStockOrderPlugin.CartLimitOverride.Value : 9999;
+		return SmartStockOrderPlugin.PluginVersion
+			+ "|" + maxBoxes
+			+ "|" + (removeLimit ? "1" : "0")
+			+ "|" + (includeRack ? "1" : "0")
+			+ "|" + (includeDisplay ? "1" : "0")
+			+ "|" + (boxOnly ? "1" : "0")
+			+ "|" + cartOverride;
 	}
 
 	private static void PublishHandshake()
@@ -141,15 +160,24 @@ internal static class CoopHandshake
 		try
 		{
 			Room room = PhotonNetwork.CurrentRoom;
+			int playerCount = room != null ? room.PlayerCount : 0;
+			bool hasOthers = playerCount > 1;
 			if (room?.CustomProperties == null || !room.CustomProperties.ContainsKey(HandshakeKey))
 			{
-				_peersMatch = true;
+				_peersMatch = !hasOthers;
+				if (!_peersMatch && _lastHandshakeWarn != "missing")
+				{
+					_lastHandshakeWarn = "missing";
+					SmartStockOrderPlugin.LogSource.LogWarning(
+						(object)("Smart Stock Order handshake missing (expected sso_hs). Match SmartStockOrder.dll on all PCs. Bulk-add blocked."));
+				}
+
 				return;
 			}
 
 			string expected = BuildHandshakeValue();
 			string actual = room.CustomProperties[HandshakeKey]?.ToString() ?? string.Empty;
-			_peersMatch = string.IsNullOrEmpty(actual) || actual == expected;
+			_peersMatch = !string.IsNullOrEmpty(actual) && actual == expected;
 			if (!_peersMatch && actual != _lastHandshakeWarn)
 			{
 				_lastHandshakeWarn = actual;
@@ -157,10 +185,14 @@ internal static class CoopHandshake
 					(object)("Smart Stock Order cfg/version mismatch with host. Local=" + expected + " Host=" + actual
 						+ ". Match SmartStockOrder.dll + MaxBoxesPerRun/RemoveCartLimit on all PCs."));
 			}
+			else if (_peersMatch)
+			{
+				_lastHandshakeWarn = string.Empty;
+			}
 		}
 		catch
 		{
-			_peersMatch = true;
+			_peersMatch = false;
 		}
 	}
 }

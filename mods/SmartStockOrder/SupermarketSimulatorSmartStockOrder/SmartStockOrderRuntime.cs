@@ -66,7 +66,8 @@ internal static class SmartStockOrderRuntime
 
 	private static float _planSceneCacheTime = -1f;
 
-	private const float PlanSceneCacheTtl = 1.5f;
+	private const float PlanSceneCacheTtl = 6f;
+	private const float PlanSceneCacheTtlMultiplayer = 1f;
 
 	internal static string LastTabletActionText => _lastTabletActionText;
 
@@ -223,11 +224,23 @@ internal static class SmartStockOrderRuntime
 
 	internal static void OrderFullFromButton()
 	{
+		if (NetworkCartUtil.InMultiplayer && !CoopHandshake.PeersMatch)
+		{
+			CoopHandshake.WarnBulkGateOnce();
+			return;
+		}
+
 		OrderFull();
 	}
 
 	internal static void OrderMinimumFromButton()
 	{
+		if (NetworkCartUtil.InMultiplayer && !CoopHandshake.PeersMatch)
+		{
+			CoopHandshake.WarnBulkGateOnce();
+			return;
+		}
+
 		OrderMinimum();
 	}
 
@@ -236,6 +249,12 @@ internal static class SmartStockOrderRuntime
 		if (!IsEnabledForClick())
 		{
 			return "Disabled";
+		}
+
+		if (NetworkCartUtil.InMultiplayer && !CoopHandshake.PeersMatch)
+		{
+			CoopHandshake.WarnBulkGateOnce();
+			return "Co-op mismatch";
 		}
 		MarketShoppingCart val = FindCart();
 		if ((Object)(object)val == (Object)null)
@@ -267,6 +286,13 @@ internal static class SmartStockOrderRuntime
 		{
 			return "Disabled";
 		}
+
+		if (NetworkCartUtil.InMultiplayer && !CoopHandshake.PeersMatch)
+		{
+			CoopHandshake.WarnBulkGateOnce();
+			return "Co-op mismatch";
+		}
+
 		MarketShoppingCart val = FindCart();
 		if ((Object)(object)val == (Object)null)
 		{
@@ -376,7 +402,8 @@ internal static class SmartStockOrderRuntime
 		_displaySlotCache = Object.FindObjectsOfType<DisplaySlot>();
 		_rackSlotCache = Object.FindObjectsOfType<RackSlot>();
 		_crateCache = Object.FindObjectsOfType<Crate>();
-		_planSceneCacheTime = Time.unscaledTime + PlanSceneCacheTtl;
+		float ttl = NetworkCartUtil.InMultiplayer ? PlanSceneCacheTtlMultiplayer : PlanSceneCacheTtl;
+		_planSceneCacheTime = Time.unscaledTime + ttl;
 	}
 
 	private static IDManager GetIdManager()
@@ -629,20 +656,7 @@ internal static class SmartStockOrderRuntime
 		{
 			return val3.ShoppingCart;
 		}
-		MarketShoppingCart val4 = Object.FindObjectOfType<MarketShoppingCart>();
-		if ((Object)(object)val4 != (Object)null)
-		{
-			return val4;
-		}
-		MarketShoppingCart[] array = Resources.FindObjectsOfTypeAll<MarketShoppingCart>();
-		for (int i = 0; i < array.Length; i++)
-		{
-			if ((Object)(object)array[i] != (Object)null)
-			{
-				return array[i];
-			}
-		}
-		return null;
+		return Object.FindObjectOfType<MarketShoppingCart>();
 	}
 
 	private static MarketShoppingCart FindTabletCart(out TabletDevice tablet)
@@ -664,20 +678,7 @@ internal static class SmartStockOrderRuntime
 
 	private static TabletDevice FindTabletDevice()
 	{
-		TabletDevice val = Object.FindObjectOfType<TabletDevice>();
-		if ((Object)(object)val != (Object)null)
-		{
-			return val;
-		}
-		TabletDevice[] array = Resources.FindObjectsOfTypeAll<TabletDevice>();
-		for (int i = 0; i < array.Length; i++)
-		{
-			if ((Object)(object)array[i] != (Object)null)
-			{
-				return array[i];
-			}
-		}
-		return null;
+		return Object.FindObjectOfType<TabletDevice>();
 	}
 
 	private static string AddOrderToCart(MarketShoppingCart cart, Dictionary<int, int> order, string reason)

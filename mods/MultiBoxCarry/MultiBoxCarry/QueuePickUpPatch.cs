@@ -59,6 +59,8 @@ internal static class QueuePickUpPatch
 			IQueuableBox queuableBox = FindTargetQueueBox(mainCamera, __instance, heldQueueBox);
 			if (queuableBox == null)
 			{
+				Plugin.Log.LogInfo((object)("[MultiBox][dbg] OnUse with held box but no queue target; vanilla runs (may drop). held="
+					+ BoxUtility.Describe(heldQueueBox)));
 				return true;
 			}
 			if (CoopPlayer.InMultiplayer
@@ -289,7 +291,7 @@ internal static class QueuePickUpPatch
 		{
 			return false;
 		}
-		return a.Raw == b.Raw;
+		return BoxUtility.SameBox(a.Raw, b.Raw);
 	}
 
 	private static bool IsQueueBoxOccupied(IQueuableBox queueBox)

@@ -15,12 +15,10 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 	private static readonly List<UnityAction> ButtonActions = new List<UnityAction>();
 
 	private GameObject _fullButton;
-
 	private GameObject _minimumButton;
-
 	private float _nextFindTime;
-
 	private float _nextMissingLogTime;
+	private int _missCount;
 
 	public SmartStockOrderMarketButtons(IntPtr ptr)
 		: base(ptr)
@@ -29,42 +27,52 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 
 	private void Update()
 	{
-		if ((Object)(object)_fullButton != (Object)null)
+		bool haveFull = (Object)(object)_fullButton != (Object)null;
+		bool haveMin = (Object)(object)_minimumButton != (Object)null;
+		if (haveFull)
 		{
 			_fullButton.SetActive(true);
 		}
-		if ((Object)(object)_minimumButton != (Object)null)
+
+		if (haveMin)
 		{
 			_minimumButton.SetActive(true);
 		}
-		if (!(Time.unscaledTime < _nextFindTime) && (!((Object)(object)_fullButton != (Object)null) || !((Object)(object)_minimumButton != (Object)null)))
+
+		if (haveFull && haveMin)
 		{
-			_nextFindTime = Time.unscaledTime + 1f;
-			TryInstallButtons();
+			return;
 		}
+
+		if (Time.unscaledTime < _nextFindTime)
+		{
+			return;
+		}
+
+		float backoff = _missCount < 3 ? 2f : (_missCount < 8 ? 5f : 15f);
+		_nextFindTime = Time.unscaledTime + backoff;
+		TryInstallButtons();
 	}
 
 	private void TryInstallButtons()
 	{
 		Transform buttonRoot = FindButtonRoot();
-		Transform template = (((Object)(object)buttonRoot != (Object)null) ? buttonRoot.Find("Products Tab Button") : null);
-		if ((Object)(object)template == (Object)null)
-		{
-			template = FindTemplateButton();
-			if ((Object)(object)template != (Object)null)
-			{
-				buttonRoot = template.parent;
-			}
-		}
+		Transform template = ((Object)(object)buttonRoot != (Object)null) ? buttonRoot.Find("Products Tab Button") : null;
 		if ((Object)(object)template == (Object)null || (Object)(object)buttonRoot == (Object)null)
 		{
+			// Never give up permanently: the Market App button root only exists
+			// after the player first opens the in-game PC, which can be minutes in.
+			_missCount++;
 			if (Time.unscaledTime >= _nextMissingLogTime)
 			{
-				_nextMissingLogTime = Time.unscaledTime + 10f;
+				_nextMissingLogTime = Time.unscaledTime + 20f;
 				SmartStockOrderPlugin.LogSource.LogInfo("Smart Stock Order: waiting for Market App button template.");
 			}
+
 			return;
 		}
+
+		_missCount = 0;
 		Transform marketRoot = FindMarketAppRoot(template);
 		DestroyOrphanSmartStockUi(marketRoot);
 		DestroyOrphanSmartStockUi(buttonRoot);
@@ -78,6 +86,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 				SmartStockOrderRuntime.OrderFullFromButton);
 			_fullButton.name = "Smart Stock Order Refill Button";
 		}
+
 		if ((Object)(object)_minimumButton == (Object)null)
 		{
 			_minimumButton = CreateMarketButton(
@@ -87,6 +96,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 				SmartStockOrderRuntime.OrderMinimumFromButton);
 			_minimumButton.name = "Smart Stock Order Minimum Button";
 		}
+
 		SmartStockOrderPlugin.LogSource.LogInfo("Smart Stock Order: installed Market App buttons in tab row layout.");
 	}
 
@@ -96,6 +106,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 		{
 			return;
 		}
+
 		for (int i = root.childCount - 1; i >= 0; i--)
 		{
 			Transform child = root.GetChild(i);
@@ -103,6 +114,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			{
 				continue;
 			}
+
 			string name = child.name;
 			bool isOurs = name == "Smart Stock Order Refill Button"
 				|| name == "Smart Stock Order Minimum Button"
@@ -111,11 +123,13 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			{
 				continue;
 			}
+
 			GameObject go = child.gameObject;
 			if ((Object)(object)go == (Object)(object)_fullButton || (Object)(object)go == (Object)(object)_minimumButton)
 			{
 				continue;
 			}
+
 			Object.Destroy(go);
 		}
 	}
@@ -127,40 +141,8 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 		{
 			return val.transform;
 		}
-		Transform[] array = Resources.FindObjectsOfTypeAll<Transform>();
-		foreach (Transform val2 in array)
-		{
-			if ((Object)(object)val2 != (Object)null && val2.name == "Buttons" && GetHierarchyPath(val2).EndsWith("---GAME---/Computer/Screen/Market App/Taskbar/Buttons"))
-			{
-				return val2;
-			}
-		}
-		return null;
-	}
 
-	private static Transform FindTemplateButton()
-	{
-		Transform[] array = Resources.FindObjectsOfTypeAll<Transform>();
-		foreach (Transform val in array)
-		{
-			if ((Object)(object)val != (Object)null && val.name == "Products Tab Button" && GetHierarchyPath(val).Contains("Market App"))
-			{
-				return val;
-			}
-		}
 		return null;
-	}
-
-	private static string GetHierarchyPath(Transform transform)
-	{
-		string text = transform.name;
-		Transform parent = transform.parent;
-		while ((Object)(object)parent != (Object)null)
-		{
-			text = parent.name + "/" + text;
-			parent = parent.parent;
-		}
-		return text;
 	}
 
 	private static Transform FindMarketAppRoot(Transform transform)
@@ -172,8 +154,10 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			{
 				return val;
 			}
+
 			val = val.parent;
 		}
+
 		return null;
 	}
 
@@ -187,6 +171,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 		{
 			layout = val.AddComponent<LayoutElement>();
 		}
+
 		layout.ignoreLayout = false;
 		layout.minWidth = 108f;
 		layout.preferredWidth = 118f;
@@ -196,15 +181,16 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 		RectTransform component2 = val.GetComponent<RectTransform>();
 		if ((Object)(object)component2 != (Object)null)
 		{
-			component2.localScale = Vector3.one;
 			float scale = Mathf.Clamp(SmartStockOrderPlugin.MarketButtonScale.Value, 0.45f, 0.85f);
 			component2.localScale = new Vector3(scale, scale, 1f);
 		}
+
 		LocalizeStringEvent localize = val.GetComponentInChildren<LocalizeStringEvent>(true);
 		if ((Object)(object)localize != (Object)null)
 		{
 			localize.enabled = false;
 		}
+
 		TextMeshProUGUI labelText = val.GetComponentInChildren<TextMeshProUGUI>(true);
 		if ((Object)(object)labelText != (Object)null)
 		{
@@ -217,6 +203,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			labelText.enableWordWrapping = false;
 			labelText.overflowMode = TextOverflowModes.Ellipsis;
 		}
+
 		RectTransform[] children = val.GetComponentsInChildren<RectTransform>(true);
 		foreach (RectTransform child in children)
 		{
@@ -224,6 +211,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			{
 				continue;
 			}
+
 			if ((Object)(object)labelText != (Object)null && (Object)(object)child == (Object)(object)labelText.rectTransform)
 			{
 				child.anchorMin = Vector2.zero;
@@ -245,6 +233,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 				}
 			}
 		}
+
 		Button button = val.GetComponent<Button>();
 		ButtonHandler handler = val.GetComponent<ButtonHandler>();
 		if ((Object)(object)handler != (Object)null)
@@ -253,6 +242,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			{
 				button.enabled = false;
 			}
+
 			UnityEvent click = new UnityEvent();
 			UnityAction action = DelegateSupport.ConvertDelegate<UnityAction>((Delegate)onClick);
 			ButtonActions.Add(action);
@@ -266,6 +256,7 @@ public sealed class SmartStockOrderMarketButtons : MonoBehaviour
 			ButtonActions.Add(action);
 			button.onClick.AddListener(action);
 		}
+
 		return val;
 	}
 }

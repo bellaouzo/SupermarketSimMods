@@ -1,6 +1,8 @@
 using System;
 using System.Globalization;
 using System.Text;
+using EmployeeTraining.EmployeeCashier;
+using EmployeeTraining.EmployeeRestocker;
 using ExitGames.Client.Photon;
 using Il2CppInterop.Runtime;
 using Photon.Pun;
@@ -15,6 +17,7 @@ public static class TrainingNetworkSync
 	private const string RoomPropertyKey = "etp_v1";
 	private const string HandshakePropertyKey = "etp_hs";
 	private const byte ChunkEventCode = 193;
+	private const byte ChunkRequestEventCode = 194;
 	private const int RoomPropUtf8Limit = 12000;
 	private const int ChunkCharSize = 8000;
 	private const string ChunkPrefix = "etp";
@@ -23,11 +26,14 @@ public static class TrainingNetworkSync
 	private static string _lastPublishedJson = string.Empty;
 	private static string _lastHandshake = string.Empty;
 	private static float _nextPublishAt;
+	private static float _pendingJoinPublishAt = -1f;
+	private static bool _publishDirty;
 	private static bool _applyingRemote;
 	private static bool _wasInRoom;
 	private static bool _wasMaster;
 	private static int _lastPlayerCount;
 	private static float _nextGuestUiRebindAt;
+	private static float _nextGuestApplyAt;
 	private static int _guestUiRebindAttemptsLeft;
 	private static bool _eventHooked;
 	private static Il2CppSystem.Action<EventData> _eventHandler;
@@ -36,6 +42,7 @@ public static class TrainingNetworkSync
 	private static int _incomingChunkTotal;
 	private static string[] _incomingChunks;
 	private static int _incomingChunksReceived;
+	private static float _nextChunkRequestAt;
 
 	public static bool InMultiplayer
 	{
@@ -94,6 +101,7 @@ public static class TrainingNetworkSync
 			_lastHandshake = string.Empty;
 			_lastPlayerCount = 0;
 			_wasMaster = false;
+			_nextChunkRequestAt = 0f;
 			ClearIncomingChunks();
 		}
 		else if (inRoom)
@@ -101,7 +109,7 @@ public static class TrainingNetworkSync
 			bool master = IsHost;
 			if (master && !_wasMaster)
 			{
-				PublishFromHost(force: true);
+				ScheduleJoinPublish(1f);
 			}
 
 			_wasMaster = master;
@@ -110,10 +118,23 @@ public static class TrainingNetworkSync
 				int playerCount = CurrentPlayerCount();
 				if (playerCount > _lastPlayerCount)
 				{
-					PublishFromHost(force: true);
+					ScheduleJoinPublish(2f);
 				}
 
 				_lastPlayerCount = playerCount;
+				if (_pendingJoinPublishAt > 0f && Time.unscaledTime >= _pendingJoinPublishAt)
+				{
+					_pendingJoinPublishAt = -1f;
+					if (!PublishFromHost(force: true) && ETSaveManager.Data != null)
+					{
+						ScheduleJoinPublish(1.5f);
+					}
+				}
+
+				if (_publishDirty && Time.unscaledTime >= _nextPublishAt)
+				{
+					PublishFromHost(force: false);
+				}
 			}
 		}
 
@@ -123,7 +144,13 @@ public static class TrainingNetworkSync
 			return;
 		}
 
-		TryApplyFromRoom();
+		if (Time.unscaledTime >= _nextGuestApplyAt)
+		{
+			_nextGuestApplyAt = Time.unscaledTime + 1f;
+			TryApplyFromRoom();
+			MaybeRequestChunkResend();
+		}
+
 		TickGuestUiRebind();
 	}
 
@@ -134,8 +161,22 @@ public static class TrainingNetworkSync
 			return;
 		}
 
-		_guestUiRebindAttemptsLeft = 6;
-		_nextGuestUiRebindAt = Time.unscaledTime + 0.35f;
+		if (_guestUiRebindAttemptsLeft > 0)
+		{
+			return;
+		}
+
+		_guestUiRebindAttemptsLeft = 2;
+		_nextGuestUiRebindAt = Time.unscaledTime + 1.5f;
+	}
+
+	private static void ScheduleJoinPublish(float delaySeconds)
+	{
+		float at = Time.unscaledTime + Mathf.Max(0.25f, delaySeconds);
+		if (_pendingJoinPublishAt < 0f || at < _pendingJoinPublishAt)
+		{
+			_pendingJoinPublishAt = at;
+		}
 	}
 
 	private static void TickGuestUiRebind()
@@ -145,16 +186,28 @@ public static class TrainingNetworkSync
 			return;
 		}
 
+		int attempt = _guestUiRebindAttemptsLeft;
 		_guestUiRebindAttemptsLeft--;
-		_nextGuestUiRebindAt = Time.unscaledTime + 1.5f;
+		_nextGuestUiRebindAt = Time.unscaledTime + 3f;
 		try
 		{
-			ETSaveManager.RebindLiveEmployees();
+			TryApplyFromRoom();
+			ETSaveManager.RebindLiveEmployees(bindWorldEmployees: false);
+			if (attempt == 2)
+			{
+				CashierSkillManager.Instance?.BindWorldEmployees();
+				RestockerSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
 			Plugin.LogWarn("Guest UI rebind failed: " + ex.Message);
 		}
+	}
+
+	public static void MarkPublishDirty()
+	{
+		_publishDirty = true;
 	}
 
 	public static void InvalidateAppliedCache()
@@ -177,52 +230,55 @@ public static class TrainingNetworkSync
 
 		if (IsHost)
 		{
-			PublishFromHost(force: true);
+			ScheduleJoinPublish(0.75f);
 			return;
 		}
 
-		ForceReapplyFromRoom();
+		ScheduleGuestUiRebind();
 	}
 
-	public static void PublishFromHost(bool force = false)
+	public static bool PublishFromHost(bool force = false)
 	{
 		if (!InMultiplayer || !IsHost || _applyingRemote || ETSaveManager.Data == null)
 		{
-			return;
+			return false;
 		}
 
 		float now = Time.unscaledTime;
 		if (!force && now < _nextPublishAt)
 		{
-			return;
+			_publishDirty = true;
+			return false;
 		}
 
-		_nextPublishAt = now + 0.75f;
+		_nextPublishAt = now + 1.25f;
 		try
 		{
 			TrainingSaveDto dto = TrainingSaveDto.From(ETSaveManager.Data);
-			string json = TrainingJson.Serialize(dto);
-			if (!force && json == _lastPublishedJson)
+			string json = TrainingJson.SerializeCompact(dto);
+			int utf8Bytes = Encoding.UTF8.GetByteCount(json);
+			bool fitsInRoomProps = utf8Bytes <= RoomPropUtf8Limit;
+			if (json == _lastPublishedJson && (fitsInRoomProps || !force))
 			{
-				return;
+				_publishDirty = false;
+				return true;
 			}
 
 			Room room = PhotonNetwork.CurrentRoom;
 			if (room == null)
 			{
 				Plugin.LogError("Training network publish failed: CurrentRoom is null.");
-				return;
+				return false;
 			}
 
 			string handshake = BuildHandshake(dto);
-			int utf8Bytes = Encoding.UTF8.GetByteCount(json);
-			if (utf8Bytes > RoomPropUtf8Limit)
+			if (!fitsInRoomProps)
 			{
 				if (!PublishChunked(json, handshake, room))
 				{
 					Plugin.LogError(
 						$"Training network publish failed entirely (chunked, {utf8Bytes} UTF8 bytes).");
-					return;
+					return false;
 				}
 			}
 			else
@@ -233,16 +289,20 @@ public static class TrainingNetworkSync
 					[HandshakePropertyKey] = handshake
 				};
 				room.SetCustomProperties(props);
-				Plugin.LogInfo("Published training skills to room properties.");
+				Plugin.LogDebug("Published training skills to room properties.");
 			}
 
 			_lastPublishedJson = json;
 			_lastAppliedJson = json;
 			_lastHandshake = handshake;
+			_publishDirty = false;
+			return true;
 		}
 		catch (Exception ex)
 		{
 			Plugin.LogError("Training network publish failed: " + ex.Message);
+			_publishDirty = true;
+			return false;
 		}
 	}
 
@@ -276,15 +336,71 @@ public static class TrainingNetworkSync
 		}
 	}
 
+	private static void MaybeRequestChunkResend()
+	{
+		// Late-join durability: when the host's payload was too big for room props,
+		// etp_v1 stays empty and data only flows via chunk events. A guest that
+		// missed those events would otherwise stay blank forever.
+		if (!string.IsNullOrEmpty(_lastAppliedJson) || Time.unscaledTime < _nextChunkRequestAt)
+		{
+			return;
+		}
+
+		try
+		{
+			Room room = PhotonNetwork.CurrentRoom;
+			if (room?.CustomProperties == null || !room.CustomProperties.ContainsKey(HandshakePropertyKey))
+			{
+				return;
+			}
+
+			string handshake = room.CustomProperties[HandshakePropertyKey]?.ToString();
+			if (string.IsNullOrEmpty(handshake))
+			{
+				return;
+			}
+
+			int sep = handshake.IndexOf('|');
+			if (sep < 0
+				|| !int.TryParse(handshake.Substring(sep + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int entries)
+				|| entries <= 0)
+			{
+				return;
+			}
+
+			object raw = room.CustomProperties.ContainsKey(RoomPropertyKey) ? room.CustomProperties[RoomPropertyKey] : null;
+			string roomJson = raw != null ? raw.ToString() : null;
+			if (!string.IsNullOrEmpty(roomJson))
+			{
+				return;
+			}
+
+			_nextChunkRequestAt = Time.unscaledTime + 6f;
+			RaiseEventOptions options = new RaiseEventOptions
+			{
+				Receivers = ReceiverGroup.MasterClient
+			};
+			if (PhotonNetwork.RaiseEvent(ChunkRequestEventCode, "etp_req", options, SendOptions.SendReliable))
+			{
+				Plugin.LogInfo("Requested training chunk resend from host (room prop empty, handshake has entries).");
+			}
+		}
+		catch (Exception ex)
+		{
+			Plugin.LogWarn("Training chunk resend request failed: " + ex.Message);
+		}
+	}
+
 	public static void OnJoinedRoomEdge()
 	{
 		if (IsHost)
 		{
-			PublishFromHost(force: true);
+			ScheduleJoinPublish(1.5f);
 		}
 		else
 		{
-			ForceReapplyFromRoom();
+			ETSaveManager.ClearGuestEphemeralData();
+			InvalidateAppliedCache();
 			ScheduleGuestUiRebind();
 		}
 	}
@@ -318,7 +434,23 @@ public static class TrainingNetworkSync
 
 	private static void HandleEvent(EventData photonEvent)
 	{
-		if (photonEvent == null || photonEvent.Code != ChunkEventCode || IsHost)
+		if (photonEvent == null)
+		{
+			return;
+		}
+
+		if (photonEvent.Code == ChunkRequestEventCode)
+		{
+			if (InMultiplayer && IsHost)
+			{
+				Plugin.LogInfo("Guest requested training resync; republishing.");
+				ScheduleJoinPublish(0.5f);
+			}
+
+			return;
+		}
+
+		if (photonEvent.Code != ChunkEventCode || IsHost)
 		{
 			return;
 		}
@@ -535,11 +667,48 @@ public static class TrainingNetworkSync
 			ETSaveManager.ReplaceDataFromNetwork(dto.ToTrainingData());
 			_lastAppliedJson = json;
 			_lastHandshake = BuildHandshake(dto);
-			Plugin.LogInfo("Applied host training skills from " + source + ".");
+			Plugin.LogDebug(
+				"Applied host training skills from " + source
+				+ $". cashiers={Count(dto.Cashiers)} restockers={Count(dto.Restockers)}"
+				+ SummarizeExp("cashierExp", dto.Cashiers));
 		}
 		finally
 		{
 			_applyingRemote = false;
 		}
+
+		if (_guestUiRebindAttemptsLeft <= 0)
+		{
+			_guestUiRebindAttemptsLeft = 1;
+			_nextGuestUiRebindAt = Time.unscaledTime + 0.5f;
+		}
+	}
+
+	private static int Count(SkillSaveEntry[] entries)
+	{
+		return entries == null ? 0 : entries.Length;
+	}
+
+	private static string SummarizeExp(string label, SkillSaveEntry[] entries)
+	{
+		if (entries == null || entries.Length == 0)
+		{
+			return string.Empty;
+		}
+
+		StringBuilder sb = new StringBuilder();
+		sb.Append(' ').Append(label).Append('=');
+		for (int i = 0; i < entries.Length; i++)
+		{
+			if (i > 0)
+			{
+				sb.Append(',');
+			}
+
+			SkillSaveEntry entry = entries[i];
+			sb.Append(entry == null ? 0 : entry.Exp);
+		}
+
+		return sb.ToString();
 	}
 }

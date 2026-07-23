@@ -22,6 +22,8 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 	private float _nextTickAt;
 	private float _nextApplyAt;
 	private int _lastPing = int.MinValue;
+	private int _lastQueuedOut = int.MinValue;
+	private int _lastQueuedIn = int.MinValue;
 	private bool _lastInRoom;
 	private bool _hudVisible;
 	private bool _timeoutsApplied;
@@ -31,6 +33,7 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 	private bool _wasInRoom;
 	private bool _loggedInstallReminder;
 	private string _lastHandshakeWarn = string.Empty;
+	private float _nextBacklogWarnAt;
 
 	public ConnectionGuardRuntime(IntPtr ptr)
 		: base(ptr)
@@ -127,9 +130,9 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 
 	private static string BuildHandshakeValue()
 	{
-		int timeoutMs = Mathf.Clamp(ConnectionGuardPlugin.DisconnectTimeoutMs.Value, 10000, 180000);
-		int allowance = Mathf.Clamp(ConnectionGuardPlugin.SentCountAllowance.Value, 5, 20);
-		int quickResend = Mathf.Clamp(ConnectionGuardPlugin.QuickResends.Value, 2, 10);
+		int timeoutMs = Mathf.Clamp(ConnectionGuardPlugin.DisconnectTimeoutMs.Value, 10000, 60000);
+		int allowance = Mathf.Clamp(ConnectionGuardPlugin.SentCountAllowance.Value, 5, 12);
+		int quickResend = Mathf.Clamp(ConnectionGuardPlugin.QuickResends.Value, 2, 5);
 		return ConnectionGuardPlugin.PluginVersion + "|" + timeoutMs + "|" + allowance + "|" + quickResend;
 	}
 
@@ -226,9 +229,9 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 				return;
 			}
 
-			int timeoutMs = Mathf.Clamp(ConnectionGuardPlugin.DisconnectTimeoutMs.Value, 10000, 180000);
-			int allowance = Mathf.Clamp(ConnectionGuardPlugin.SentCountAllowance.Value, 5, 20);
-			int quickResends = Mathf.Clamp(ConnectionGuardPlugin.QuickResends.Value, 2, 10);
+			int timeoutMs = Mathf.Clamp(ConnectionGuardPlugin.DisconnectTimeoutMs.Value, 10000, 60000);
+			int allowance = Mathf.Clamp(ConnectionGuardPlugin.SentCountAllowance.Value, 5, 12);
+			int quickResends = Mathf.Clamp(ConnectionGuardPlugin.QuickResends.Value, 2, 5);
 			byte quick = (byte)quickResends;
 
 			if (_timeoutsApplied
@@ -291,6 +294,8 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 		SetHudVisible(true);
 
 		int ping = 0;
+		int queuedOut = 0;
+		int queuedIn = 0;
 		if (inRoom)
 		{
 			try
@@ -301,14 +306,22 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 			{
 				ping = 0;
 			}
+
+			TryReadQueues(out queuedOut, out queuedIn);
+			MaybeWarnBacklog(ping, queuedOut, queuedIn);
 		}
 
-		if (ping == _lastPing && inRoom == _lastInRoom)
+		if (ping == _lastPing
+			&& queuedOut == _lastQueuedOut
+			&& queuedIn == _lastQueuedIn
+			&& inRoom == _lastInRoom)
 		{
 			return;
 		}
 
 		_lastPing = ping;
+		_lastQueuedOut = queuedOut;
+		_lastQueuedIn = queuedIn;
 		_lastInRoom = inRoom;
 
 		if ((Object)(object)_pingText == (Object)null)
@@ -316,15 +329,73 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 			return;
 		}
 
-		_pingText.text = inRoom ? $"PING  {ping} ms" : "PING  --";
-		_pingText.color = PingColor(ping, inRoom);
+		if (!inRoom)
+		{
+			_pingText.text = "PING  --";
+		}
+		else if (ConnectionGuardPlugin.ShowQueueOnHud.Value)
+		{
+			_pingText.text = $"PING  {ping} ms   Q {queuedOut}/{queuedIn}";
+		}
+		else
+		{
+			_pingText.text = $"PING  {ping} ms";
+		}
+
+		_pingText.color = PingColor(ping, queuedOut + queuedIn, inRoom);
 	}
 
-	private static Color PingColor(int ping, bool inRoom)
+	private static void TryReadQueues(out int queuedOut, out int queuedIn)
+	{
+		queuedOut = 0;
+		queuedIn = 0;
+		try
+		{
+			LoadBalancingClient client = PhotonNetwork.NetworkingClient;
+			LoadBalancingPeer peer = client?.LoadBalancingPeer;
+			if (peer == null)
+			{
+				return;
+			}
+
+			queuedOut = peer.QueuedOutgoingCommands;
+			queuedIn = peer.QueuedIncomingCommands;
+		}
+		catch
+		{
+		}
+	}
+
+	private void MaybeWarnBacklog(int ping, int queuedOut, int queuedIn)
+	{
+		int queued = queuedOut + queuedIn;
+		if (ping < 250 && queued < 40)
+		{
+			return;
+		}
+
+		float now = Time.unscaledTime;
+		if (now < _nextBacklogWarnAt)
+		{
+			return;
+		}
+
+		_nextBacklogWarnAt = now + 15f;
+		ConnectionGuardPlugin.LogSource.LogWarning(
+			(object)($"Photon backlog risk: ping={ping}ms queuedOut={queuedOut} queuedIn={queuedIn}. "
+				+ "If actions are minutes late, leave/rejoin the room — do not keep playing on a backed-up link."));
+	}
+
+	private static Color PingColor(int ping, int queued, bool inRoom)
 	{
 		if (!inRoom)
 		{
 			return new Color(0.75f, 0.78f, 0.82f, 0.95f);
+		}
+
+		if (queued >= 40 || ping >= 250)
+		{
+			return new Color(0.95f, 0.4f, 0.35f, 1f);
 		}
 
 		if (ping <= 80)
@@ -378,7 +449,7 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 		rootRt.anchorMin = new Vector2(1f, 1f);
 		rootRt.anchorMax = new Vector2(1f, 1f);
 		rootRt.pivot = new Vector2(1f, 1f);
-		rootRt.sizeDelta = new Vector2(150f, 34f);
+		rootRt.sizeDelta = new Vector2(220f, 34f);
 		rootRt.anchoredPosition = new Vector2(
 			ConnectionGuardPlugin.HudOffsetX.Value,
 			ConnectionGuardPlugin.HudOffsetY.Value);
@@ -461,6 +532,6 @@ internal sealed class ConnectionGuardRuntime : MonoBehaviour
 		}
 
 		string lower = name.ToLowerInvariant();
-		return !lower.Contains("mainmenu") && !lower.Contains("boot") && !lower.Contains("logo");
+		return !lower.Contains("menu") && !lower.Contains("boot") && !lower.Contains("logo");
 	}
 }

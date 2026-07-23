@@ -54,7 +54,7 @@ public class SkillIndicator : MonoBehaviour
 
 	private void Start()
 	{
-		player = ((Component)Singleton<PlayerController>.Instance).transform;
+		player = ResolveBillboardTarget();
 		orthoCamSmoothness = 0.7f;
 		lvlText = ((Component)((Component)this).transform.Find("Lvl Text")).GetComponent<StringLocalizeTranslator>();
 		if (lvlText != null)
@@ -104,18 +104,35 @@ public class SkillIndicator : MonoBehaviour
 
 	private void Update()
 	{
-		//IL_0007: Unknown result type (might be due to invalid IL or missing references)
-		//IL_000c: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0015: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0030: Unknown result type (might be due to invalid IL or missing references)
-		//IL_003b: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0040: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0041: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0046: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0051: Unknown result type (might be due to invalid IL or missing references)
+		if ((Time.frameCount & 3) != 0 || !((Component)this).gameObject.activeInHierarchy)
+		{
+			return;
+		}
+
+		if ((Object)(object)player == (Object)null)
+		{
+			player = ResolveBillboardTarget();
+			if ((Object)(object)player == (Object)null)
+			{
+				return;
+			}
+		}
+
 		Vector3 position = player.position;
 		position.y = ((Component)this).transform.position.y;
 		((Component)this).transform.rotation = Quaternion.Slerp(((Component)this).transform.rotation, Quaternion.LookRotation(((Component)this).transform.position - position), orthoCamSmoothness);
+	}
+
+	private static Transform ResolveBillboardTarget()
+	{
+		Camera cam = Camera.main;
+		if ((Object)(object)cam != (Object)null)
+		{
+			return ((Component)cam).transform;
+		}
+
+		PlayerController controller = Singleton<PlayerController>.Instance;
+		return (Object)(object)controller != (Object)null ? ((Component)controller).transform : null;
 	}
 
 	private void ExpChanged(int amount, bool increased)
@@ -162,6 +179,26 @@ public class SkillIndicator : MonoBehaviour
 		{
 			lvlText.Key = "Lvl";
 			lvlText.Translate(skill.Lvl);
+		}
+		if (!levelUp)
+		{
+			if (expText != null)
+			{
+				expText.text = skill.GetExpDisplay();
+			}
+			if (fillingBar)
+			{
+				Tween obj = fillingTween;
+				if (obj != null)
+				{
+					TweenExtensions.Kill(obj, false);
+				}
+				fillingTween = null;
+				fillingBar = false;
+			}
+			changingBarForNewLevel = false;
+			UpdateBar();
+			return;
 		}
 		if (storePointIndicator != null && lvlText != null)
 		{

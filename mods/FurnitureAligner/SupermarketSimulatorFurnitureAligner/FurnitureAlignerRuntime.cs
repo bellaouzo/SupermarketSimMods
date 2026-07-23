@@ -11,6 +11,8 @@ internal static class FurnitureAlignerRuntime
 
 	private static readonly Dictionary<Transform, Bounds> BoundsCache = new Dictionary<Transform, Bounds>();
 
+	private static readonly Collider[] OverlapBuffer = new Collider[96];
+
 	private static GameObject _alignRoot;
 
 	private static Material _alignMaterial;
@@ -122,7 +124,7 @@ internal static class FurnitureAlignerRuntime
 			HideAlignmentLines();
 			return targetPos;
 		}
-		if (!TryGetBounds(currentFurniture, out Bounds bounds))
+		if (!TryGetCachedBounds(currentFurniture, out Bounds bounds))
 		{
 			return targetPos;
 		}
@@ -133,7 +135,7 @@ internal static class FurnitureAlignerRuntime
 		float search = Mathf.Max(Mathf.Max(centerSnap, edgeSnap), ScaledTuningValue(FurnitureAlignerPlugin.SnapSearchRadius));
 		float gap = Mathf.Max(0f, ScaledTuningValue(FurnitureAlignerPlugin.SnapGap));
 		float radius = Mathf.Max(search, Mathf.Max(centerSnap, edgeSnap) + 1.5f);
-		Collider[] hits = Physics.OverlapSphere(targetPos, radius);
+		int hitCount = Physics.OverlapSphereNonAlloc(targetPos, radius, OverlapBuffer);
 		float bestEdgeX = edgeSnap;
 		float bestEdgeZ = edgeSnap;
 		bool hasEdgeX = false;
@@ -150,8 +152,9 @@ internal static class FurnitureAlignerRuntime
 		float bestCenterZ = centerSnap;
 		Bounds xTargetBounds = bounds;
 		Bounds zTargetBounds = bounds;
-		foreach (Collider hit in hits)
+		for (int hi = 0; hi < hitCount; hi++)
 		{
+			Collider hit = OverlapBuffer[hi];
 			if ((UnityEngine.Object)(object)hit == (UnityEngine.Object)null || hit.isTrigger)
 			{
 				continue;

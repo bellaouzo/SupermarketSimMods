@@ -50,8 +50,9 @@ internal static class PlayerObjectHolder_DropObject_Patch
 	{
 		try
 		{
-			if ((Object)(object)__instance == (Object)null)
+			if ((Object)(object)__instance == (Object)null || (Object)(object)_droppingBox == (Object)null)
 			{
+				_droppingBox = null;
 				return;
 			}
 
@@ -62,15 +63,49 @@ internal static class PlayerObjectHolder_DropObject_Patch
 				return;
 			}
 
-			if ((Object)(object)_droppingBox != (Object)null)
+			Box dropped = _droppingBox;
+			_droppingBox = null;
+
+			if (BoxUtility.IsOnHoldPoint(dropped, __instance))
 			{
-				BoxUtility.PrepareBoxForWorld(_droppingBox);
-				NetworkBoxUtil.MarkReleased(new BoxAdapter(_droppingBox));
-				_droppingBox = null;
+				BoxInventoryController.RestoreHeldAfterFailedDrop(player, dropped);
+				return;
 			}
 
-			__instance.SetNullCurrentObject();
+			NetworkBoxUtil.ClearOccupyFlags(new BoxAdapter(dropped));
+
+			GameObject current = null;
+			if ((Object)(object)__instance.CurrentObject != (Object)null)
+			{
+				current = ((Il2CppObjectBase)__instance.CurrentObject).TryCast<GameObject>();
+			}
+
+			bool currentIsDropped = (Object)(object)current != (Object)null
+				&& (Object)(object)current.GetComponent<Box>() == (Object)(object)dropped;
+			if ((Object)(object)current == (Object)null || currentIsDropped)
+			{
+				__instance.SetNullCurrentObject();
+				BoxInteraction boxInteraction = ((Component)__instance).GetComponent<BoxInteraction>();
+				if ((Object)(object)boxInteraction != (Object)null)
+				{
+					if ((Object)(object)boxInteraction.m_Box == (Object)(object)dropped)
+					{
+						boxInteraction.m_Box = null;
+					}
+
+					if (boxInteraction.m_PlacingMode)
+					{
+						boxInteraction.m_PlacingMode = false;
+					}
+				}
+			}
+
 			BoxInventoryController.PruneDestroyedQueued(player);
+			BoxInventoryController.SanitizeHandVisuals(player);
+			if (!BoxUtility.IsInPlacingMode(player))
+			{
+				BoxInventoryController.EnsureHandOrPromotePublic(player);
+			}
 		}
 		catch (Exception ex)
 		{

@@ -1,4 +1,5 @@
 using System;
+using Photon.Pun;
 using UnityEngine;
 
 namespace MultiBoxCarry;
@@ -20,6 +21,7 @@ internal static class NetworkBoxUtil
 				return;
 			}
 
+			EnsureOwnership(networkBox);
 			networkBox.IsNetworkOccupied = true;
 			networkBox.DisableNetworkTransformSync(true);
 			PlayerInstance local = CoopPlayer.GetLocalPlayerInstance();
@@ -49,6 +51,9 @@ internal static class NetworkBoxUtil
 				return;
 			}
 
+			EnsureOwnership(networkBox);
+			networkBox.IsNetworkOccupied = true;
+			networkBox.DisableNetworkTransformSync(false);
 			PlayerInstance local = CoopPlayer.GetLocalPlayerInstance();
 			if ((Object)(object)local != (Object)null)
 			{
@@ -72,6 +77,25 @@ internal static class NetworkBoxUtil
 		{
 			ClearLocalOccupy(queueBox);
 			BoxUtility.PrepareBoxForWorld(queueBox);
+			ClearOccupyFlags(queueBox);
+		}
+		catch (Exception ex)
+		{
+			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] MarkReleased failed: " + ex.Message));
+		}
+	}
+
+	internal static void ClearOccupyFlags(IQueuableBox queueBox)
+	{
+		if (queueBox == null)
+		{
+			return;
+		}
+
+		try
+		{
+			ClearLocalOccupy(queueBox);
+			BoxUtility.EnsurePresented(queueBox);
 
 			if (!CoopPlayer.InMultiplayer)
 			{
@@ -89,7 +113,7 @@ internal static class NetworkBoxUtil
 		}
 		catch (Exception ex)
 		{
-			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] MarkReleased failed: " + ex.Message));
+			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] ClearOccupyFlags failed: " + ex.Message));
 		}
 	}
 
@@ -115,12 +139,49 @@ internal static class NetworkBoxUtil
 				return;
 			}
 
+			EnsureOwnership(networkBox);
 			networkBox.IsNetworkOccupied = false;
 			networkBox.DisableNetworkTransformSync(false);
 		}
 		catch (Exception ex)
 		{
 			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] PrepareForHandPickup failed: " + ex.Message));
+		}
+	}
+
+	internal static void EnsureOwnership(IQueuableBox queueBox)
+	{
+		if (queueBox == null || !CoopPlayer.InMultiplayer)
+		{
+			return;
+		}
+
+		try
+		{
+			EnsureOwnership(GetNetworkBox(queueBox));
+		}
+		catch (Exception ex)
+		{
+			Plugin.Log.LogWarning((object)("[NetworkBoxUtil] EnsureOwnership failed: " + ex.Message));
+		}
+	}
+
+	private static void EnsureOwnership(NetworkBox networkBox)
+	{
+		if ((Object)(object)networkBox == (Object)null)
+		{
+			return;
+		}
+
+		PhotonView view = networkBox.PhotonView;
+		if ((Object)(object)view == (Object)null)
+		{
+			view = networkBox.m_PhotonView;
+		}
+
+		if ((Object)(object)view != (Object)null && !view.IsMine)
+		{
+			view.RequestOwnership();
 		}
 	}
 

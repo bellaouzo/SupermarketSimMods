@@ -39,6 +39,10 @@ public class CashierSkillManager : EmployeeSkillManager<CashierSkill, CashierSki
 		{
 			foreach (int id in hired)
 			{
+				if (id < 0)
+				{
+					continue;
+				}
 				CashierSkillData data = TrainingData.FirstOrDefault((CashierSkillData c) => c.Id == id);
 				if (data == null)
 				{
@@ -58,14 +62,14 @@ public class CashierSkillManager : EmployeeSkillManager<CashierSkill, CashierSki
 		{
 			foreach (Cashier cashier in active)
 			{
-				if (cashier != null)
+				if (cashier != null && cashier.CashierID >= 0)
 				{
 					Spawn(active, cashier.CashierID);
 					activeCount++;
 				}
 			}
 		}
-		Plugin.LogInfo($"Cashier sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"Cashier sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 
 	private void RegisterMissingTrainingPanels()

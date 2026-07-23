@@ -152,9 +152,17 @@ public abstract class EmployeeSkill<S, ST, E, T> : IEmployeeSkill where S : IEmp
 			{
 				Plugin.LogWarn($"OnExpChanged(init) failed for {this}: {ex.Message}");
 			}
-		}
 
-		if (leveled && !init)
+			try
+			{
+				OnLevelChanged?.Invoke(obj: false);
+			}
+			catch (Exception ex)
+			{
+				Plugin.LogWarn($"OnLevelChanged(init) failed for {this}: {ex.Message}");
+			}
+		}
+		else if (leveled)
 		{
 			try
 			{

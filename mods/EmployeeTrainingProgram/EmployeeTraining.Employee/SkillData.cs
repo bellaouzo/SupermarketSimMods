@@ -18,6 +18,11 @@ public abstract class SkillData<S> where S : IEmployeeSkill
 
 	public SkillData()
 	{
+		if (ETSaveManager.SuppressSkillDataLoadSubscription)
+		{
+			return;
+		}
+
 		ETSaveManager.SaveDataLoadedEvent = (Action)Delegate.Combine(ETSaveManager.SaveDataLoadedEvent, new Action(OnLoad));
 	}
 

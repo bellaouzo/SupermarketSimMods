@@ -12,7 +12,7 @@ public sealed class DemandPlugin : BasePlugin
 {
 	public const string PluginGuid = "DemandSystem";
 	public const string PluginName = "Demand System";
-	public const string PluginVersion = "1.1.2";
+	public const string PluginVersion = "1.1.7";
 
 	internal static ConfigEntry<bool> Enabled;
 	internal static ConfigEntry<float> EventChancePercent;
@@ -39,7 +39,7 @@ public sealed class DemandPlugin : BasePlugin
 		CustomerDemandChancePercent = Config.Bind("Demand", "CustomerDemandChancePercent", 30, "Chance each customer list gets demanded products.");
 		ExtraItemsMin = Config.Bind("Demand", "ExtraItemsMin", 1, "Minimum extra units per demanded product.");
 		ExtraItemsMax = Config.Bind("Demand", "ExtraItemsMax", 2, "Maximum extra units per demanded product.");
-		OverlayDurationSeconds = Config.Bind("UI", "OverlayDurationSeconds", 12f, "Seconds the overlay stays visible after generation.");
+		OverlayDurationSeconds = Config.Bind("UI", "OverlayDurationSeconds", 12f, "Seconds the overlay stays visible after it actually appears in-store (menu/loading time does not count).");
 		KeepOverlayVisibleForDebug = Config.Bind("UI", "KeepOverlayVisibleForDebug", false, "Keep overlay visible all day when a demand event is active.");
 		DebugLogging = Config.Bind("Diagnostics", "DebugLogging", false, "Verbose demand logging.");
 

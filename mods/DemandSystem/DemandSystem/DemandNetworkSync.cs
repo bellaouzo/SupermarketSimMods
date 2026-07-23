@@ -2,6 +2,7 @@ using System;
 using ExitGames.Client.Photon;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine;
 
 namespace DemandSystem;
 
@@ -11,10 +12,13 @@ internal static class DemandNetworkSync
 	private const string HandshakeKey = "ds_hs";
 
 	private static bool _wasInRoom;
+	private static bool _wasMaster;
 	private static string _lastAppliedState = string.Empty;
 	private static string _lastPublishedState = string.Empty;
 	private static string _lastHandshakeWarn = string.Empty;
 	private static bool _peersMatch = true;
+	private static float _nextTickAt;
+	private static bool _stateDirty = true;
 
 	internal static bool InMultiplayer
 	{
@@ -60,6 +64,8 @@ internal static class DemandNetworkSync
 		bool inRoom = InMultiplayer;
 		if (inRoom && !_wasInRoom)
 		{
+			_wasInRoom = true;
+			_wasMaster = IsHost;
 			if (IsHost)
 			{
 				PublishHandshake();
@@ -69,12 +75,19 @@ internal static class DemandNetworkSync
 			{
 				TryApplyState();
 			}
+
+			_nextTickAt = Time.unscaledTime + 1f;
+			return;
 		}
-		else if (!inRoom && _wasInRoom)
+
+		if (!inRoom && _wasInRoom)
 		{
 			_lastAppliedState = string.Empty;
 			_lastPublishedState = string.Empty;
 			_peersMatch = true;
+			_wasInRoom = false;
+			_wasMaster = false;
+			return;
 		}
 
 		_wasInRoom = inRoom;
@@ -83,11 +96,29 @@ internal static class DemandNetworkSync
 			return;
 		}
 
+		bool master = IsHost;
+		if (master && !_wasMaster)
+		{
+			PublishHandshake();
+			AdoptRoomStateOrPublishAsNewMaster();
+			_nextTickAt = Time.unscaledTime + 1f;
+		}
+
+		_wasMaster = master;
+		if (Time.unscaledTime < _nextTickAt)
+		{
+			return;
+		}
+
+		_nextTickAt = Time.unscaledTime + 5f;
 		UpdatePeersMatch();
 		if (IsHost)
 		{
 			PublishHandshake();
-			PublishState(force: false);
+			if (_stateDirty)
+			{
+				PublishState(force: false);
+			}
 		}
 		else
 		{
@@ -102,9 +133,15 @@ internal static class DemandNetworkSync
 			return;
 		}
 
+		if (!force && !_stateDirty)
+		{
+			return;
+		}
+
 		string state = DemandState.BuildNetworkState();
 		if (!force && state == _lastPublishedState)
 		{
+			_stateDirty = false;
 			return;
 		}
 
@@ -120,6 +157,7 @@ internal static class DemandNetworkSync
 			room.SetCustomProperties(props);
 			_lastPublishedState = state;
 			_lastAppliedState = state;
+			_stateDirty = false;
 		}
 		catch (Exception ex)
 		{
@@ -129,6 +167,7 @@ internal static class DemandNetworkSync
 
 	internal static void NotifyHostGenerated()
 	{
+		_stateDirty = true;
 		PublishState(force: true);
 	}
 
@@ -194,15 +233,24 @@ internal static class DemandNetworkSync
 		try
 		{
 			Room room = PhotonNetwork.CurrentRoom;
+			int playerCount = room != null ? room.PlayerCount : 0;
+			bool hasOthers = playerCount > 1;
 			if (room?.CustomProperties == null || !room.CustomProperties.ContainsKey(HandshakeKey))
 			{
-				_peersMatch = true;
+				_peersMatch = !hasOthers;
+				if (!_peersMatch && _lastHandshakeWarn != "missing")
+				{
+					_lastHandshakeWarn = "missing";
+					DemandPlugin.LogSource.LogWarning(
+						(object)("Demand handshake missing (expected ds_hs). Match Demand.dll on all PCs. Guest demand extras blocked."));
+				}
+
 				return;
 			}
 
 			string expected = DemandPlugin.PluginVersion + "|" + CfgHash();
 			string actual = room.CustomProperties[HandshakeKey]?.ToString() ?? string.Empty;
-			_peersMatch = string.IsNullOrEmpty(actual) || actual == expected;
+			_peersMatch = !string.IsNullOrEmpty(actual) && actual == expected;
 			if (!_peersMatch && actual != _lastHandshakeWarn)
 			{
 				_lastHandshakeWarn = actual;
@@ -210,10 +258,45 @@ internal static class DemandNetworkSync
 					(object)("Demand cfg/version mismatch with host. Local=" + expected + " Host=" + actual
 						+ ". Match Demand.dll + Demand.cfg on all PCs."));
 			}
+			else if (_peersMatch)
+			{
+				_lastHandshakeWarn = string.Empty;
+			}
 		}
 		catch
 		{
-			_peersMatch = true;
+			_peersMatch = false;
+		}
+	}
+
+	private static void AdoptRoomStateOrPublishAsNewMaster()
+	{
+		try
+		{
+			Room room = PhotonNetwork.CurrentRoom;
+			string roomState = null;
+			if (room?.CustomProperties != null && room.CustomProperties.ContainsKey(StateKey))
+			{
+				roomState = room.CustomProperties[StateKey]?.ToString();
+			}
+
+			if (!string.IsNullOrEmpty(roomState) && DemandState.ApplyNetworkState(roomState))
+			{
+				_lastAppliedState = roomState;
+				_lastPublishedState = roomState;
+				_stateDirty = false;
+				return;
+			}
+
+			if (DemandState.HasPublishableState)
+			{
+				_stateDirty = true;
+				PublishState(force: true);
+			}
+		}
+		catch (Exception ex)
+		{
+			DemandPlugin.LogSource.LogWarning((object)("Demand master adopt/publish failed: " + ex.Message));
 		}
 	}
 

@@ -32,7 +32,19 @@ internal static class OnThrowSuccess
 				component.SetNullCurrentObject();
 			}
 
+			BoxInteraction boxInteraction = ((Component)__instance).GetComponent<BoxInteraction>();
+			if ((Object)(object)boxInteraction != (Object)null)
+			{
+				boxInteraction.m_Box = null;
+				boxInteraction.m_PlacingMode = false;
+			}
+
 			BoxInventoryController.PruneDestroyedQueued(__instance);
+			if (!BoxUtility.IsInPlacingMode(__instance))
+			{
+				BoxInventoryController.EnsureHandOrPromotePublic(__instance);
+			}
+
 			OnThrowMessanger.GaveMessage("throw");
 		}
 		catch (Exception ex)

@@ -48,9 +48,19 @@ public class BoxAdapter : IQueuableBox
 
 	public bool IsOccupied()
 	{
-		if ((Object)(object)_box.OccupyOwner != (Object)null)
+		PlayerInteraction local = CoopPlayer.GetLocalPlayerInteraction();
+		Transform localTransform = (Object)(object)local != (Object)null
+			? ((Component)local).transform
+			: null;
+
+		Transform occupyOwner = _box.OccupyOwner;
+		if ((Object)(object)occupyOwner != (Object)null)
 		{
-			return true;
+			if ((Object)(object)localTransform == (Object)null
+				|| !IsSelfTransform(occupyOwner, localTransform))
+			{
+				return true;
+			}
 		}
 
 		try
@@ -59,6 +69,11 @@ public class BoxAdapter : IQueuableBox
 				?? ((Component)_box).GetComponentInParent<NetworkBox>();
 			if ((Object)(object)networkBox != (Object)null && networkBox.IsNetworkOccupied)
 			{
+				if ((Object)(object)local != (Object)null && BoxUtility.IsLocalInventoryBox(_box, local))
+				{
+					return false;
+				}
+
 				return true;
 			}
 		}
@@ -67,6 +82,13 @@ public class BoxAdapter : IQueuableBox
 		}
 
 		return false;
+	}
+
+	private static bool IsSelfTransform(Transform owner, Transform localTransform)
+	{
+		return (Object)(object)owner == (Object)(object)localTransform
+			|| owner.IsChildOf(localTransform)
+			|| localTransform.IsChildOf(owner);
 	}
 
 	public void Restore(Transform player)

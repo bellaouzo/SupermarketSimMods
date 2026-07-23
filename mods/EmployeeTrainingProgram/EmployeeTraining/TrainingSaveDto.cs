@@ -49,16 +49,24 @@ public class TrainingSaveDto
 
 	public TrainingData ToTrainingData()
 	{
-		return new TrainingData
+		ETSaveManager.SuppressSkillDataLoadSubscription = true;
+		try
 		{
-			CashierSkills = FromEntries(Cashiers, () => new CashierSkillData()),
-			RestockerSkills = FromEntries(Restockers, () => new RestockerSkillData()),
-			CsHelperSkills = FromEntries(CsHelpers, () => new CsHelperSkillData()),
-			JanitorSkills = FromEntries(Janitors, () => new JanitorSkillData()),
-			SecuritySkills = FromEntries(Security, () => new SecuritySkillData()),
-			BakerSkills = FromEntries(Bakers, () => new BakerSkillData()),
-			IceCreamHelperSkills = FromEntries(IceCreamHelpers, () => new IceCreamHelperSkillData())
-		};
+			return new TrainingData
+			{
+				CashierSkills = FromEntries(Cashiers, () => new CashierSkillData()),
+				RestockerSkills = FromEntries(Restockers, () => new RestockerSkillData()),
+				CsHelperSkills = FromEntries(CsHelpers, () => new CsHelperSkillData()),
+				JanitorSkills = FromEntries(Janitors, () => new JanitorSkillData()),
+				SecuritySkills = FromEntries(Security, () => new SecuritySkillData()),
+				BakerSkills = FromEntries(Bakers, () => new BakerSkillData()),
+				IceCreamHelperSkills = FromEntries(IceCreamHelpers, () => new IceCreamHelperSkillData())
+			};
+		}
+		finally
+		{
+			ETSaveManager.SuppressSkillDataLoadSubscription = false;
+		}
 	}
 
 	private static List<T> FromEntries<T>(SkillSaveEntry[] entries, Func<T> create) where T : class
@@ -70,7 +78,7 @@ public class TrainingSaveDto
 		}
 		foreach (SkillSaveEntry e in entries)
 		{
-			if (e == null)
+			if (e == null || e.Id < 0)
 			{
 				continue;
 			}

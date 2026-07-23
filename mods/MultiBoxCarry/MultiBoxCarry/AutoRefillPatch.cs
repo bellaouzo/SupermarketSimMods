@@ -9,23 +9,46 @@ internal static class AutoRefillPatch
 {
 	private static PlayerInteraction _cachedPlayer;
 	private static PlayerObjectHolder _cachedHolder;
+	private static float _nextHandshakeAt;
 
 	private static void Postfix(PlayerInteraction __instance)
 	{
 		try
 		{
-			if ((Object)(object)__instance == (Object)null || !CoopPlayer.IsLocal(__instance))
+			if ((Object)(object)__instance == (Object)null)
 			{
 				return;
 			}
 
-			CoopHandshake.Tick();
-
-			HandHighlightGuard.Tick(__instance);
-
-			if (BoxInventoryController.SuppressAutoRefill)
+			if (CoopPlayer.HasCachedLocal
+				&& (Object)(object)__instance != (Object)(object)CoopPlayer.CachedLocal)
 			{
 				return;
+			}
+
+			if (!CoopPlayer.IsLocal(__instance))
+			{
+				return;
+			}
+
+			float now = Time.unscaledTime;
+			if (now >= _nextHandshakeAt)
+			{
+				_nextHandshakeAt = now + 4f;
+				CoopHandshake.Tick();
+			}
+
+			// These two repair loops are load-bearing at per-frame cadence: recovery
+			// must run before the promote check below (throttling it let promote fire
+			// into a desynced hand and duplicate boxes into the queue), and the
+			// hidden-renderer re-show keeps a promoted box visible.
+			BoxInventoryController.RecoverDesyncedHold(__instance);
+
+			PlayerObjectHolder holder = GetHolder(__instance);
+			IQueuableBox held = BoxUtility.GetHeldQueueBox(holder);
+			if (held != null && BoxUtility.HasHiddenRenderer(held))
+			{
+				BoxUtility.EnsurePresented(held);
 			}
 
 			BoxInventory inventory = PlayerInventoryManager.GetInventory(__instance);
@@ -34,7 +57,18 @@ internal static class AutoRefillPatch
 				return;
 			}
 
-			PlayerObjectHolder holder = GetHolder(__instance);
+			HandHighlightGuard.Tick(__instance);
+
+			if (BoxInventoryController.SuppressAutoRefill)
+			{
+				return;
+			}
+
+			if (BoxUtility.IsInPlacingMode(__instance))
+			{
+				return;
+			}
+
 			if ((Object)(object)holder == (Object)null || (Object)(object)holder.CurrentObject != (Object)null)
 			{
 				return;

@@ -79,6 +79,13 @@ internal sealed class BoxInventoryHUD : MonoBehaviour
 
 	private void RefreshPlayerRefs()
 	{
+		if ((Object)(object)_player != (Object)null && CoopPlayer.HasCachedLocal
+			&& (Object)(object)_player == (Object)(object)CoopPlayer.CachedLocal
+			&& (Object)(object)_holder != (Object)null)
+		{
+			return;
+		}
+
 		_player = CoopPlayer.GetLocalPlayerInteraction();
 		_holder = (Object)(object)_player == (Object)null
 			? null

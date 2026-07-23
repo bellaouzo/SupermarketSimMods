@@ -82,6 +82,6 @@ public class JanitorSkillManager : EmployeeSkillManager<JanitorSkill, JanitorSki
 				}
 			}
 		}
-		Plugin.LogInfo($"Janitor sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"Janitor sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 }

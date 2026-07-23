@@ -23,7 +23,7 @@ using UnityEngine.SceneManagement;
 
 namespace EmployeeTraining;
 
-[BepInPlugin("jp.tsuteto.sms.EmployeeTrainingProgram", "EmployeeTrainingProgram", "2.6.31")]
+[BepInPlugin("jp.tsuteto.sms.EmployeeTrainingProgram", "EmployeeTrainingProgram", "2.6.40")]
 [BepInProcess("Supermarket Simulator.exe")]
 public class Plugin : BasePlugin
 {
@@ -171,18 +171,16 @@ public class Plugin : BasePlugin
 			trainingApp.AddComponent<PCTrainingApp>();
 			trainingApp.transform.SetParent(managers.transform);
 			GameLoadedEvent?.Invoke();
-			EmployeeTraining.EmployeeRestocker.ClerkRecoveryPatch.OnSceneReady();
+			EmployeeTraining.EmployeeRestocker.ClerkRecoveryPatch.ScheduleSceneReady();
 			try
 			{
 				if (TrainingNetworkSync.InMultiplayer && !TrainingNetworkSync.IsHost)
 				{
-					TrainingNetworkSync.ForceReapplyFromRoom();
 					TrainingNetworkSync.ScheduleGuestUiRebind();
-					ETSaveManager.RebindLiveEmployees();
 				}
 				else
 				{
-					ETSaveManager.RebindLiveEmployees();
+					ETSaveManager.RebindLiveEmployees(bindWorldEmployees: false);
 				}
 			}
 			catch (Exception ex)

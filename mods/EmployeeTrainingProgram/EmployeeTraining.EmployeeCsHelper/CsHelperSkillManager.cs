@@ -81,6 +81,6 @@ public class CsHelperSkillManager : EmployeeSkillManager<CsHelperSkill, CsHelper
 				}
 			}
 		}
-		Plugin.LogInfo($"CsHelper sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"CsHelper sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 }

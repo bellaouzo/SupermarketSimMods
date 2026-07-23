@@ -1,0 +1,4 @@
+<timestamp>Wednesday, Jul 22, 2026, 11:19 PM (UTC-6)</timestamp>
+<user_query>
+I am not getting a popup when I join about what the surge for today is
+</user_query>

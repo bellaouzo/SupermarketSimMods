@@ -2,6 +2,7 @@ using System;
 using ExitGames.Client.Photon;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine;
 
 namespace SupermarketSimulatorFurnitureAligner;
 
@@ -11,6 +12,7 @@ internal static class CoopHandshake
 
 	private static bool _wasInRoom;
 	private static string _lastHandshakeWarn = string.Empty;
+	private static float _nextTickAt;
 
 	internal static bool IsHost
 	{
@@ -34,6 +36,13 @@ internal static class CoopHandshake
 
 	internal static void Tick()
 	{
+		float now = Time.unscaledTime;
+		if (now < _nextTickAt)
+		{
+			return;
+		}
+
+		_nextTickAt = now + 8f;
 		bool inRoom = CoopPlacement.InMultiplayer;
 		if (inRoom && !_wasInRoom)
 		{

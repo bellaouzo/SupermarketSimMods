@@ -17,7 +17,7 @@ public sealed class ShelfProductSwapperPlugin : BasePlugin
 
 	public const string PluginName = "CS - Shelf Product Swapper";
 
-	public const string PluginVersion = "1.2.16";
+	public const string PluginVersion = "1.2.23";
 
 	internal static ManualLogSource LogSource;
 

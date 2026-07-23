@@ -1,6 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.InputSystem.Controls;
 
 namespace MultiBoxCarry;
 
@@ -53,12 +51,6 @@ internal static class BoxInventoryController
 		{
 			if ((Object)(object)rackSlot != (Object)null)
 			{
-				bool flag = IsSameProduct(heldBox, targetBox);
-				bool flag2 = Keyboard.current != null && ((ButtonControl)Keyboard.current.leftShiftKey).isPressed;
-				if (flag && !flag2)
-				{
-					return false;
-				}
 				SoftUnhandLocal(player);
 				if (!inventory.Enqueue(heldBox, targetBox.GetProduct()))
 				{
@@ -68,7 +60,8 @@ internal static class BoxInventoryController
 				BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(count));
 				NetworkBoxUtil.MarkQueued(heldBox);
 				rackSlot.InstantInteract();
-				EnsureHandOrPromote(player);
+				EnsurePresentedHeld(player);
+				FinishQueuePickup(player);
 				return true;
 			}
 
@@ -80,6 +73,30 @@ internal static class BoxInventoryController
 			}
 			BoxUtility.HideAndAttachBox(((Component)player).transform, heldBox, BoxUtility.GetQueueLocalOffset(count));
 			NetworkBoxUtil.MarkQueued(heldBox);
+			if (CoopPlayer.InMultiplayer)
+			{
+				// Vanilla Interact misfires in a Photon room (the networked holder
+				// still thinks we're holding, so it resolves as a drop instead of a
+				// pickup — boxes end up released at the player's feet). Take the
+				// target into the hand ourselves; TryForceHand does the occupy
+				// broadcast via MarkHeld.
+				NetworkBoxUtil.PrepareForHandPickup(targetBox);
+				bool forced = TryForceHand(player, targetBox);
+				PlayerObjectHolder dbgHolder = ((Component)player).GetComponent<PlayerObjectHolder>();
+				Plugin.Log.LogInfo((object)("[MultiBox][dbg] queue-pickup: queued=" + BoxUtility.Describe(heldBox)
+					+ " target=" + BoxUtility.Describe(targetBox)
+					+ " forceHand=" + (forced ? "ok" : "FAILED")
+					+ " hand=" + BoxUtility.Describe(BoxUtility.GetHeldQueueBox(dbgHolder))));
+				if (!forced)
+				{
+					EnsureHandOrPromote(player);
+				}
+
+				EnsurePresentedHeld(player);
+				SanitizeHandVisuals(player);
+				return true;
+			}
+
 			IInteractable component = ((Component)targetBox.transform).GetComponent<IInteractable>();
 			if (component != null)
 			{
@@ -87,7 +104,8 @@ internal static class BoxInventoryController
 				player.Interact(false, false);
 			}
 
-			EnsureHandOrPromote(player);
+			EnsurePresentedHeld(player);
+			FinishQueuePickup(player);
 			return true;
 		}
 		finally
@@ -287,21 +305,257 @@ internal static class BoxInventoryController
 			return;
 		}
 
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		IQueuableBox held = BoxUtility.GetHeldQueueBox(holder);
+		if (held is BoxAdapter adapter)
+		{
+			Box box = adapter.GetBox();
+			Transform occupyOwner = (Object)(object)box != (Object)null ? box.OccupyOwner : null;
+			if ((Object)(object)box != (Object)null && (Object)(object)occupyOwner != (Object)null)
+			{
+				box.SetOccupy(false, occupyOwner);
+			}
+		}
+
 		BoxInteraction boxInteraction = ((Component)player).GetComponent<BoxInteraction>();
 		if ((Object)(object)boxInteraction != (Object)null)
 		{
 			boxInteraction.m_Box = null;
+			boxInteraction.m_PlacingMode = false;
 		}
 
-		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
 		if ((Object)(object)holder != (Object)null)
 		{
 			holder.SetNullCurrentObject();
 		}
 	}
 
+	private static void FinishQueuePickup(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		if (CoopPlayer.InMultiplayer)
+		{
+			PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+			if ((Object)(object)holder == (Object)null || (Object)(object)holder.CurrentObject == (Object)null)
+			{
+				// In a Photon room the vanilla pickup we just initiated completes
+				// asynchronously. Promoting from the queue now races it: the arriving
+				// box gets swept into the queue and the hand ends up holding a hidden
+				// box. Hold promote back instead — RecoverDesyncedHold force-hands the
+				// box when it arrives, and AutoRefill promotes after the grace window
+				// if the pickup never lands.
+				_promoteBackoffUntil = Time.unscaledTime + 0.6f;
+				return;
+			}
+
+			EnsurePresentedHeld(player);
+			SanitizeHandVisuals(player);
+			return;
+		}
+
+		EnsureHandOrPromote(player);
+		EnsurePresentedHeld(player);
+		SanitizeHandVisuals(player);
+	}
+
+	private static void EnsurePresentedHeld(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		IQueuableBox held = BoxUtility.GetHeldQueueBox(holder);
+		if (held != null)
+		{
+			BoxUtility.EnsurePresented(held);
+			BoxUtility.SetBoxPhysicsHeld(held);
+		}
+	}
+
+	internal static void EnsureHandOrPromotePublic(PlayerInteraction player)
+	{
+		EnsureHandOrPromote(player);
+	}
+
+	private static readonly System.Collections.Generic.List<Box> _holdPointBoxes = new System.Collections.Generic.List<Box>(8);
+
+	internal static void RestoreHeldAfterFailedDrop(PlayerInteraction player, Box box)
+	{
+		if ((Object)(object)player == (Object)null || (Object)(object)box == (Object)null)
+		{
+			return;
+		}
+
+		TryForceHand(player, new BoxAdapter(box));
+		SanitizeHandVisuals(player);
+		Plugin.Log.LogWarning((object)"[MultiBox] Place/drop failed — restored box to hand instead of consuming it.");
+	}
+
+	internal static void SanitizeHandVisuals(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		if ((Object)(object)holder == (Object)null)
+		{
+			return;
+		}
+
+		Box handBox = null;
+		IQueuableBox held = BoxUtility.GetHeldQueueBox(holder);
+		if (held is BoxAdapter heldAdapter)
+		{
+			handBox = heldAdapter.GetBox();
+
+			// Hand and queue must be disjoint: if the hand box is also queued,
+			// ReflowQueuedBoxes re-hides it every frame (invisible held box) and
+			// the HUD double-counts it.
+			BoxInventory heldInventory = PlayerInventoryManager.GetInventory(player);
+			if (heldInventory != null && heldInventory.RemoveByRaw(handBox))
+			{
+				Plugin.Log.LogWarning((object)("[MultiBox] Removed hand box from queue (hand/queue overlap): "
+					+ BoxUtility.Describe(handBox)));
+			}
+
+			BoxUtility.EnsurePresented(held);
+		}
+
+		BoxUtility.CollectHoldPointBoxes(holder, _holdPointBoxes);
+		for (int i = 0; i < _holdPointBoxes.Count; i++)
+		{
+			Box extra = _holdPointBoxes[i];
+			if ((Object)(object)extra == (Object)null
+				|| (Object)(object)extra == (Object)(object)handBox)
+			{
+				continue;
+			}
+
+			IQueuableBox adapter = new BoxAdapter(extra);
+			if (BoxUtility.IsQueuedProductBox(extra))
+			{
+				BoxUtility.HideAndAttachBox(((Component)player).transform, adapter, BoxUtility.GetQueueLocalOffset(0));
+				NetworkBoxUtil.MarkQueued(adapter);
+				continue;
+			}
+
+			BoxInventory inventory = PlayerInventoryManager.GetInventory(player);
+			if (inventory != null && !inventory.IsFull)
+			{
+				bool alreadyQueued = false;
+				for (int q = 0; q < inventory.QueuedBoxes.Count; q++)
+				{
+					if (inventory.QueuedBoxes[q] != null && BoxUtility.SameBox(inventory.QueuedBoxes[q].Raw, adapter.Raw))
+					{
+						alreadyQueued = true;
+						break;
+					}
+				}
+
+				if (!alreadyQueued)
+				{
+					inventory.AddRaw(adapter);
+				}
+
+				BoxUtility.HideAndAttachBox(((Component)player).transform, adapter, BoxUtility.GetQueueLocalOffset(0));
+				NetworkBoxUtil.MarkQueued(adapter);
+				Plugin.Log.LogWarning((object)("[MultiBox] Moved overlapping hand box back into queue: "
+					+ BoxUtility.Describe(extra) + " hand=" + BoxUtility.Describe(handBox)));
+			}
+			else
+			{
+				NetworkBoxUtil.MarkReleased(adapter);
+				Plugin.Log.LogWarning((object)"[MultiBox] Released overlapping hand box to world (queue full).");
+			}
+		}
+
+		ReflowQueuedBoxes(player);
+	}
+
+	internal static void RecoverDesyncedHold(PlayerInteraction player)
+	{
+		if ((Object)(object)player == (Object)null || !CoopPlayer.IsLocal(player))
+		{
+			return;
+		}
+
+		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
+		BoxInteraction boxInteraction = ((Component)player).GetComponent<BoxInteraction>();
+		if ((Object)(object)holder == (Object)null)
+		{
+			return;
+		}
+
+		GameObject current = null;
+		if ((Object)(object)holder.CurrentObject != (Object)null)
+		{
+			current = ((Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase)holder.CurrentObject).TryCast<GameObject>();
+		}
+
+		Box currentBox = (Object)(object)current != (Object)null ? current.GetComponent<Box>() : null;
+		if ((Object)(object)currentBox != (Object)null)
+		{
+			if ((Object)(object)boxInteraction != (Object)null
+				&& (Object)(object)boxInteraction.m_Box != (Object)(object)currentBox)
+			{
+				boxInteraction.m_Box = currentBox;
+			}
+
+			SanitizeHandVisuals(player);
+			return;
+		}
+
+		Box orphan = BoxUtility.FindOrphanHandBox(holder);
+		if ((Object)(object)orphan != (Object)null)
+		{
+			TryForceHand(player, new BoxAdapter(orphan));
+			if ((Object)(object)boxInteraction != (Object)null)
+			{
+				boxInteraction.m_PlacingMode = false;
+			}
+
+			SanitizeHandVisuals(player);
+			Plugin.Log.LogWarning((object)"[MultiBox] Recovered orphaned held box after hand desync.");
+			return;
+		}
+
+		if ((Object)(object)boxInteraction != (Object)null)
+		{
+			if ((Object)(object)boxInteraction.m_Box != (Object)null)
+			{
+				boxInteraction.m_Box = null;
+			}
+
+			if (boxInteraction.m_PlacingMode)
+			{
+				boxInteraction.m_PlacingMode = false;
+				Plugin.Log.LogWarning((object)"[MultiBox] Cleared stuck placing mode with empty hands.");
+			}
+		}
+
+		SanitizeHandVisuals(player);
+	}
+
 	private static void EnsureHandOrPromote(PlayerInteraction player)
 	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return;
+		}
+
+		if (BoxUtility.IsInPlacingMode(player))
+		{
+			return;
+		}
+
 		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
 		if ((Object)(object)holder != (Object)null && (Object)(object)holder.CurrentObject != (Object)null)
 		{
@@ -346,8 +600,13 @@ internal static class BoxInventoryController
 			return false;
 		}
 
-		player.SetCurrentInteractable(interactable);
-		player.Interact(false, false);
+		if (!CoopPlayer.InMultiplayer)
+		{
+			// In a Photon room vanilla Interact can resolve as a drop (networked
+			// holder state); rely on TryForceHand below instead.
+			player.SetCurrentInteractable(interactable);
+			player.Interact(false, false);
+		}
 
 		PlayerObjectHolder holder = ((Component)player).GetComponent<PlayerObjectHolder>();
 		IQueuableBox handAfter = BoxUtility.GetHeldQueueBox(holder);
@@ -385,6 +644,7 @@ internal static class BoxInventoryController
 		BoxUtility.SetBoxPhysicsHeld(queuableBox);
 		NetworkBoxUtil.MarkHeld(queuableBox);
 		ReflowQueuedBoxes(player);
+		SanitizeHandVisuals(player);
 		return true;
 	}
 
@@ -414,16 +674,21 @@ internal static class BoxInventoryController
 			queuableBox.transform.localRotation = Quaternion.identity;
 			box.SetOccupy(true, ((Component)player).transform);
 			holder.CurrentObject = ((Component)box).gameObject;
+			queuableBox.transform.localScale = Vector3.one;
+			BoxUtility.EnsurePresented(queuableBox);
 			if ((Object)(object)boxInteraction != (Object)null)
 			{
 				boxInteraction.m_Box = box;
+				boxInteraction.m_PlacingMode = false;
 			}
 
 			NetworkBoxUtil.MarkHeld(queuableBox);
 			return BoxUtility.GetHeldQueueBox(holder) != null;
 		}
-		catch
+		catch (System.Exception ex)
 		{
+			Plugin.Log.LogError(
+				(object)("[MultiBox] TryForceHand FAILED for " + BoxUtility.Describe(queuableBox) + ": " + ex));
 			return false;
 		}
 	}
@@ -436,7 +701,7 @@ internal static class BoxInventoryController
 			bool alreadyQueued = false;
 			for (int i = 0; i < inventory.QueuedBoxes.Count; i++)
 			{
-				if (inventory.QueuedBoxes[i] != null && inventory.QueuedBoxes[i].Raw == queuableBox.Raw)
+				if (inventory.QueuedBoxes[i] != null && BoxUtility.SameBox(inventory.QueuedBoxes[i].Raw, queuableBox.Raw))
 				{
 					alreadyQueued = true;
 					break;
@@ -469,8 +734,12 @@ internal static class BoxInventoryController
 			return;
 		}
 
-		player.SetCurrentInteractable(interactable);
-		player.Interact(false, false);
+		if (!CoopPlayer.InMultiplayer)
+		{
+			player.SetCurrentInteractable(interactable);
+			player.Interact(false, false);
+		}
+
 		if (BoxUtility.GetHeldQueueBox(((Component)player).GetComponent<PlayerObjectHolder>()) == null)
 		{
 			TryForceHand(player, heldBox);
@@ -493,9 +762,12 @@ internal static class BoxInventoryController
 			IQueuableBox queuableBox = inventory.QueuedBoxes[i];
 			if (queuableBox != null && !BoxUtility.IsDestroyed(queuableBox))
 			{
+				BoxUtility.SetBoxColliders(queuableBox, enabled: false);
+				BoxUtility.SetBoxPhysicsQueued(queuableBox);
 				queuableBox.transform.SetParent(((Component)player).transform, false);
 				queuableBox.transform.localPosition = BoxUtility.GetQueueLocalOffset(i);
 				queuableBox.transform.localRotation = Quaternion.identity;
+				queuableBox.transform.localScale = Vector3.zero;
 			}
 		}
 	}
@@ -538,26 +810,4 @@ internal static class BoxInventoryController
 		return ((Component)parent).GetComponent<RackSlot>();
 	}
 
-	private static bool IsSameProduct(IQueuableBox heldBox, IQueuableBox targetBox)
-	{
-		if (heldBox == null || targetBox == null)
-		{
-			return false;
-		}
-		if (!(heldBox is BoxAdapter boxAdapter))
-		{
-			return false;
-		}
-		if (!(targetBox is BoxAdapter boxAdapter2))
-		{
-			return false;
-		}
-		Box box = boxAdapter.GetBox();
-		Box box2 = boxAdapter2.GetBox();
-		if ((Object)(object)box.Product == (Object)null || (Object)(object)box2.Product == (Object)null)
-		{
-			return false;
-		}
-		return (Object)(object)box.Product == (Object)(object)box2.Product;
-	}
 }

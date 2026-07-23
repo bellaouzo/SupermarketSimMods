@@ -37,6 +37,31 @@ public class RestockerSkillManager : EmployeeSkillManager<RestockerSkill, Restoc
 		return data?.Skill;
 	}
 
+	public override void BindWorldEmployees()
+	{
+		// 1.4.2 restockers are Clerk, not the legacy Restocker type the base class
+		// scans for. Bind from the manager's active clerk list instead (no scene scan).
+		if (SkillIndicatorGenerator.SkillIndicatorTmpl == null)
+		{
+			return;
+		}
+
+		EmployeeManager employeeManager = Singleton<EmployeeManager>.Instance;
+		Il2CppSystem.Collections.Generic.List<Clerk> active = employeeManager != null ? employeeManager.m_ActiveRestockers : null;
+		if (active == null)
+		{
+			return;
+		}
+
+		foreach (Clerk clerk in active)
+		{
+			if (clerk != null && clerk.EmployeeId >= 0)
+			{
+				AssignClerk(clerk);
+			}
+		}
+	}
+
 	public RestockerSkill AssignClerk(Clerk clerk)
 	{
 		if (clerk == null)
@@ -123,6 +148,6 @@ public class RestockerSkillManager : EmployeeSkillManager<RestockerSkill, Restoc
 				}
 			}
 		}
-		Plugin.LogInfo($"Restocker sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
+		Plugin.LogDebug($"Restocker sync complete. hired={hired?.Count ?? 0}, active={activeCount}, training={TrainingData.Count}");
 	}
 }

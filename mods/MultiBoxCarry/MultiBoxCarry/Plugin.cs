@@ -10,7 +10,7 @@ namespace MultiBoxCarry;
 [BepInPlugin("com.yaboie88.multiboxcarry", "Multi Box Carry", PluginVersion)]
 public class Plugin : BasePlugin
 {
-	internal const string PluginVersion = "1.1.11";
+	internal const string PluginVersion = "1.1.30";
 
 	internal new static ManualLogSource Log;
 

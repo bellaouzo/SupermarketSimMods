@@ -29,7 +29,7 @@ internal class BoxInventory
 		}
 		foreach (IQueuableBox queuedBox in _queuedBoxes)
 		{
-			if (queuedBox != null && queuedBox.Raw == boxToQueue.Raw)
+			if (queuedBox != null && BoxUtility.SameBox(queuedBox.Raw, boxToQueue.Raw))
 			{
 				return false;
 			}
@@ -119,7 +119,7 @@ internal class BoxInventory
 
 		foreach (IQueuableBox queuedBox in _queuedBoxes)
 		{
-			if (queuedBox != null && queuedBox.Raw == box.Raw)
+			if (queuedBox != null && BoxUtility.SameBox(queuedBox.Raw, box.Raw))
 			{
 				return false;
 			}
@@ -127,6 +127,27 @@ internal class BoxInventory
 
 		_queuedBoxes.Insert(index, box);
 		return true;
+	}
+
+	public bool RemoveByRaw(object raw)
+	{
+		if (raw == null)
+		{
+			return false;
+		}
+
+		bool removed = false;
+		for (int i = _queuedBoxes.Count - 1; i >= 0; i--)
+		{
+			IQueuableBox queuedBox = _queuedBoxes[i];
+			if (queuedBox != null && BoxUtility.SameBox(queuedBox.Raw, raw))
+			{
+				_queuedBoxes.RemoveAt(i);
+				removed = true;
+			}
+		}
+
+		return removed;
 	}
 
 	public bool AddRaw(IQueuableBox box)

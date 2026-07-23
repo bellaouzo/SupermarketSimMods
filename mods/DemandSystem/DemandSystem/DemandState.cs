@@ -12,13 +12,17 @@ internal static class DemandState
 	private static readonly List<int> DemandedProductIds = new List<int>();
 
 	private static System.Random _dayRng = new System.Random(1);
-	private static float _overlayUntil;
+	private static float _overlaySecondsLeft;
 	private static int _lastGeneratedDay = int.MinValue;
 	private static bool _dayCommitted;
 
 	internal static IReadOnlyList<int> DemandedProducts => DemandedProductIds;
 
 	internal static bool HasActiveDemand => DemandedProductIds.Count > 0;
+
+	internal static bool HasPublishableState => _dayCommitted && _lastGeneratedDay != int.MinValue;
+
+	internal static bool OverlayNeedsSettle { get; set; }
 
 	internal static bool ShouldShowOverlay
 	{
@@ -34,8 +38,37 @@ internal static class DemandState
 				return true;
 			}
 
-			return Time.realtimeSinceStartup <= _overlayUntil;
+			return _overlaySecondsLeft > 0f;
 		}
+	}
+
+	internal static void RequestOverlay()
+	{
+		if (!HasActiveDemand)
+		{
+			_overlaySecondsLeft = 0f;
+			OverlayNeedsSettle = false;
+			return;
+		}
+
+		_overlaySecondsLeft = Mathf.Max(1f, DemandPlugin.OverlayDurationSeconds.Value);
+		OverlayNeedsSettle = true;
+	}
+
+	internal static void ClearOverlay()
+	{
+		_overlaySecondsLeft = 0f;
+		OverlayNeedsSettle = false;
+	}
+
+	internal static void ConsumeOverlayTime(float unscaledDeltaTime)
+	{
+		if (DemandPlugin.KeepOverlayVisibleForDebug.Value || _overlaySecondsLeft <= 0f)
+		{
+			return;
+		}
+
+		_overlaySecondsLeft = Mathf.Max(0f, _overlaySecondsLeft - Mathf.Max(0f, unscaledDeltaTime));
 	}
 
 	internal static void EnsureForDay(int currentDay)
@@ -68,7 +101,7 @@ internal static class DemandState
 		if (roll > Mathf.Clamp(DemandPlugin.EventChancePercent.Value, 0f, 100f))
 		{
 			_dayCommitted = true;
-			_overlayUntil = 0f;
+			ClearOverlay();
 			LogDebug($"No demand event today. day={currentDay} roll={roll:0.##}");
 			DemandNetworkSync.NotifyHostGenerated();
 			return;
@@ -93,7 +126,7 @@ internal static class DemandState
 
 		DemandedProductIds.Sort();
 		_dayCommitted = true;
-		_overlayUntil = Time.realtimeSinceStartup + Mathf.Max(1f, DemandPlugin.OverlayDurationSeconds.Value);
+		RequestOverlay();
 		LogDebug("Demand event active (day " + currentDay + "): " + string.Join(", ", DemandedProductIds));
 		DemandNetworkSync.NotifyHostGenerated();
 	}
@@ -155,11 +188,11 @@ internal static class DemandState
 		_dayCommitted = committed;
 		if (HasActiveDemand)
 		{
-			_overlayUntil = Time.realtimeSinceStartup + Mathf.Max(1f, DemandPlugin.OverlayDurationSeconds.Value);
+			RequestOverlay();
 		}
 		else
 		{
-			_overlayUntil = 0f;
+			ClearOverlay();
 		}
 
 		LogDebug("Applied host demand state day=" + day + " products=" + string.Join(", ", DemandedProductIds));

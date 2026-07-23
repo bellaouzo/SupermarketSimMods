@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
+using EmployeeTraining.Employee;
 using EmployeeTraining.EmployeeBaker;
 using EmployeeTraining.EmployeeCashier;
 using EmployeeTraining.EmployeeCsHelper;
@@ -11,6 +13,7 @@ using EmployeeTraining.EmployeeIceCream;
 using EmployeeTraining.EmployeeJanitor;
 using EmployeeTraining.EmployeeRestocker;
 using EmployeeTraining.EmployeeSecurity;
+using EmployeeTraining.TrainingApp;
 using HarmonyLib;
 using MyBox;
 using UnityEngine;
@@ -22,6 +25,8 @@ public static class ETSaveManager
 	private static readonly string SAVE_DIR = Path.Combine(Application.persistentDataPath, "EmployeeTraining");
 
 	public static bool IsReadyToSave = false;
+
+	public static bool SuppressSkillDataLoadSubscription;
 
 	public static Action SaveDataLoadedEvent;
 
@@ -184,9 +189,10 @@ public static class ETSaveManager
 			float now = Time.unscaledTime;
 			if (!force && now < _nextSaveAllowedAt)
 			{
+				TrainingNetworkSync.MarkPublishDirty();
 				return;
 			}
-			_nextSaveAllowedAt = now + 0.75f;
+			_nextSaveAllowedAt = now + 1.25f;
 			SaveManager saveManager = Singleton<SaveManager>.Instance;
 			string path = saveManager != null ? saveManager.CurrentSaveFilePath : null;
 			if (string.IsNullOrEmpty(path))
@@ -194,7 +200,10 @@ public static class ETSaveManager
 				path = "slot_0.es3";
 			}
 			Save(path);
-			TrainingNetworkSync.PublishFromHost(force);
+			if (!TrainingNetworkSync.PublishFromHost(force: false))
+			{
+				TrainingNetworkSync.MarkPublishDirty();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -209,17 +218,146 @@ public static class ETSaveManager
 			return;
 		}
 
-		Data = data;
-		SyncAllSkills();
-		RebindLiveEmployees();
+		if (Data == null)
+		{
+			Data = new TrainingData();
+		}
+
+		MergeSkillList<CashierSkillData, CashierSkill>(Data.CashierSkills, data.CashierSkills);
+		MergeSkillList<RestockerSkillData, RestockerSkill>(Data.RestockerSkills, data.RestockerSkills);
+		MergeSkillList<CsHelperSkillData, CsHelperSkill>(Data.CsHelperSkills, data.CsHelperSkills);
+		MergeSkillList<JanitorSkillData, JanitorSkill>(Data.JanitorSkills, data.JanitorSkills);
+		MergeSkillList<SecuritySkillData, SecuritySkill>(Data.SecuritySkills, data.SecuritySkills);
+		MergeSkillList<BakerSkillData, BakerSkill>(Data.BakerSkills, data.BakerSkills);
+		MergeSkillList<IceCreamHelperSkillData, IceCreamHelperSkill>(Data.IceCreamHelperSkills, data.IceCreamHelperSkills);
+
+		CashierSkillManager.Instance?.PurgeInvalidTrainingData();
+		RestockerSkillManager.Instance?.PurgeInvalidTrainingData();
+		CsHelperSkillManager.Instance?.PurgeInvalidTrainingData();
+		JanitorSkillManager.Instance?.PurgeInvalidTrainingData();
+		SecuritySkillManager.Instance?.PurgeInvalidTrainingData();
+		BakerSkillManager.Instance?.PurgeInvalidTrainingData();
+		IceCreamHelperSkillManager.Instance?.PurgeInvalidTrainingData();
+
+		RebindLiveEmployees(bindWorldEmployees: false);
 		TrainingNetworkSync.ScheduleGuestUiRebind();
 	}
 
-	public static void RebindLiveEmployees()
+	private static void MergeSkillList<D, S>(List<D> local, List<D> remote)
+		where D : SkillData<S>, new()
+		where S : IEmployeeSkill
+	{
+		if (local == null || remote == null)
+		{
+			return;
+		}
+
+		HashSet<int> remoteIds = new HashSet<int>();
+		foreach (D remoteEntry in remote)
+		{
+			if (remoteEntry != null && remoteEntry.Id >= 0)
+			{
+				remoteIds.Add(remoteEntry.Id);
+			}
+		}
+
+		for (int i = local.Count - 1; i >= 0; i--)
+		{
+			D entry = local[i];
+			if (entry == null || entry.Id < 0 || !remoteIds.Contains(entry.Id))
+			{
+				DestroyMergedEntryUi(entry != null ? entry.Skill : default);
+				local.RemoveAt(i);
+			}
+		}
+
+		foreach (D remoteEntry in remote)
+		{
+			if (remoteEntry == null || remoteEntry.Id < 0)
+			{
+				continue;
+			}
+
+			D localEntry = local.FirstOrDefault((D x) => x != null && x.Id == remoteEntry.Id);
+			if (localEntry == null)
+			{
+				local.Add(remoteEntry);
+				try
+				{
+					remoteEntry.Skill?.UpdateStatus(init: true);
+				}
+				catch (Exception ex)
+				{
+					Plugin.LogWarn($"Merge UpdateStatus failed id={remoteEntry.Id}: {ex.Message}");
+				}
+				continue;
+			}
+
+			localEntry.Exp = remoteEntry.Exp;
+			localEntry.Grade = remoteEntry.Grade;
+			// IsGaugeDisplayed is a per-player UI preference: keep the local toggle
+			// instead of letting every host publish flip it back.
+			if (localEntry.Skill == null)
+			{
+				continue;
+			}
+
+			try
+			{
+				localEntry.Skill.UpdateStatus(init: true);
+			}
+			catch (Exception ex)
+			{
+				Plugin.LogWarn($"Merge UpdateStatus failed id={localEntry.Id}: {ex.Message}");
+			}
+
+			if ((Object)(object)localEntry.Skill.ExpGaugeObj != (Object)null)
+			{
+				localEntry.Skill.ExpGaugeObj.SetActive(localEntry.IsGaugeDisplayed);
+			}
+		}
+	}
+
+	private static void DestroyMergedEntryUi(IEmployeeSkill skill)
+	{
+		if (skill == null)
+		{
+			return;
+		}
+
+		try
+		{
+			if (PCTrainingApp.Instance != null && (Object)(object)skill.TrainingStatusPanelObj != (Object)null)
+			{
+				PCTrainingApp.Instance.DeleteEmployee(skill);
+			}
+		}
+		catch
+		{
+		}
+
+		if ((Object)(object)skill.TrainingStatusPanelObj != (Object)null)
+		{
+			Object.Destroy((Object)(object)skill.TrainingStatusPanelObj);
+			skill.TrainingStatusPanelObj = null;
+		}
+
+		if ((Object)(object)skill.ExpGaugeObj != (Object)null)
+		{
+			Object.Destroy((Object)(object)skill.ExpGaugeObj);
+			skill.ExpGaugeObj = null;
+		}
+	}
+
+	public static void RebindLiveEmployees(bool bindWorldEmployees = false)
 	{
 		try
 		{
 			CashierSkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				CashierSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -229,6 +367,10 @@ public static class ETSaveManager
 		try
 		{
 			RestockerSkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				RestockerSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -238,6 +380,10 @@ public static class ETSaveManager
 		try
 		{
 			BakerSkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				BakerSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -247,6 +393,10 @@ public static class ETSaveManager
 		try
 		{
 			IceCreamHelperSkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				IceCreamHelperSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -256,6 +406,10 @@ public static class ETSaveManager
 		try
 		{
 			JanitorSkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				JanitorSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -265,6 +419,10 @@ public static class ETSaveManager
 		try
 		{
 			SecuritySkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				SecuritySkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -274,6 +432,10 @@ public static class ETSaveManager
 		try
 		{
 			CsHelperSkillManager.Instance?.SyncExisting();
+			if (bindWorldEmployees)
+			{
+				CsHelperSkillManager.Instance?.BindWorldEmployees();
+			}
 		}
 		catch (Exception ex)
 		{
@@ -285,6 +447,40 @@ public static class ETSaveManager
 	{
 		Plugin.LogDebug("Clearing training data");
 		Data = new TrainingData();
+	}
+
+	public static void ClearGuestEphemeralData()
+	{
+		if (Data == null)
+		{
+			Data = new TrainingData();
+			return;
+		}
+
+		ClearSkillList<CashierSkillData, CashierSkill>(Data.CashierSkills);
+		ClearSkillList<RestockerSkillData, RestockerSkill>(Data.RestockerSkills);
+		ClearSkillList<CsHelperSkillData, CsHelperSkill>(Data.CsHelperSkills);
+		ClearSkillList<JanitorSkillData, JanitorSkill>(Data.JanitorSkills);
+		ClearSkillList<SecuritySkillData, SecuritySkill>(Data.SecuritySkills);
+		ClearSkillList<BakerSkillData, BakerSkill>(Data.BakerSkills);
+		ClearSkillList<IceCreamHelperSkillData, IceCreamHelperSkill>(Data.IceCreamHelperSkills);
+		Plugin.LogDebug("Cleared guest training data before host apply");
+	}
+
+	private static void ClearSkillList<D, S>(List<D> list) where D : SkillData<S> where S : IEmployeeSkill
+	{
+		if (list == null || list.Count == 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < list.Count; i++)
+		{
+			D entry = list[i];
+			DestroyMergedEntryUi(entry != null ? entry.Skill : default);
+		}
+
+		list.Clear();
 	}
 
 	public static void SyncAllSkills()
@@ -445,6 +641,11 @@ internal static class TrainingJson
 		WriteArray(sb, "IceCreamHelpers", dto.IceCreamHelpers, true);
 		sb.AppendLine("}");
 		return sb.ToString();
+	}
+
+	public static string SerializeCompact(TrainingSaveDto dto)
+	{
+		return Serialize(dto).Replace("\r", string.Empty).Replace("\n", string.Empty);
 	}
 
 	public static TrainingSaveDto Deserialize(string json)
